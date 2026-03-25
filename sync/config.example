@@ -1,0 +1,31 @@
+# BioM3 sync config — copy to ~/.config/biom3sync/config and fill in values.
+# Do not commit your filled-in copy anywhere.
+
+# ── Local root ────────────────────────────────────────────────────────────────
+# Path to BioM3-data-share on this machine.
+# macOS + OneDrive example:
+# LOCAL_ROOT="${HOME}/Library/CloudStorage/<OneDrive>/BioM3-data-share"
+LOCAL_ROOT="/path/to/BioM3-data-share"
+
+# ── Remote list ───────────────────────────────────────────────────────────────
+# Add or remove names here. Each name must have corresponding vars below.
+REMOTES=(aurora polaris spark)
+
+# ── Aurora (ALCF, 2FA) ────────────────────────────────────────────────────────
+aurora_HOST="aurora.alcf.anl.gov"
+aurora_USER="your_alcf_username"
+aurora_PATH="/lus/flare/projects/<your_project>/path/to/BioM3-data-share"
+aurora_AUTH="2fa"
+
+# ── Polaris (ALCF, 2FA) ───────────────────────────────────────────────────────
+polaris_HOST="polaris.alcf.anl.gov"
+polaris_USER="your_alcf_username"
+polaris_PATH="/lus/grand/projects/<your_project>/path/to/BioM3-data-share"
+polaris_AUTH="2fa"
+
+# ── DGX Spark (SSH key via Tailscale) ────────────────────────────────────────
+# spark-nm resolves via ~/.ssh/config — no separate host config needed.
+spark_HOST="spark-nm"
+spark_USER="your_spark_username"
+spark_PATH="/path/to/BioM3-data-share"
+spark_AUTH="key"
