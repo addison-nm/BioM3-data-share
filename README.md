@@ -8,7 +8,7 @@ The `models` directory contains weights of trained BioM3 model instances, and co
 
 The `datasets` directory contains assorted data on which one can train BioM3 components.
 
-For questions, contact Addison at addi.howe@gmail.com.
+For questions, contact Addison at <addison@thenaturalmachine.ai>.
 
 ## Syncing
 
