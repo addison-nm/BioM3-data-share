@@ -12,6 +12,7 @@
 #   pull       [REMOTE|all] [SUBPATH]   pull data from remote(s)
 #   manifest   [-d DEPTH] [--no-checksum]   generate manifest.json + manifest.txt
 #   catalog                             add stub entries to CATALOG.md for new directories
+#   diff       REMOTE [SUBPATH]         compare local and remote data
 #
 # OPTIONS (place before command)
 #   -n, --dry-run    show what would transfer without transferring
@@ -31,6 +32,8 @@
 #   biom3sync -n push all                     # dry-run push to all remotes
 #   biom3sync pull spark models               # pull models/ from spark
 #   biom3sync disconnect aurora
+#   biom3sync diff spark                       # compare local vs spark
+#   biom3sync diff aurora datasets/CM          # compare a subdirectory
 #   biom3sync manifest                        # generate manifest with checksums
 #   biom3sync manifest -d 2 --no-checksum     # fast tree-only manifest, depth 2
 #   biom3sync catalog                         # add stubs for any undocumented directories
@@ -162,6 +165,13 @@ log_entry() {
     timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     hostname=$(hostname -s 2>/dev/null || echo "unknown")
     mkdir -p "$(dirname "$log_file")"
+    # Write header if the log file is new or empty
+    if [[ ! -s "$log_file" ]]; then
+        printf "#%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+            "timestamp" "status" "direction" "remote" \
+            "subpath" "user" "hostname" "dry_run" "duration_s" \
+            >> "$log_file"
+    fi
     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
         "$timestamp" "$status" "$direction" "$remote" \
         "${subpath:-.}" "${USER:-unknown}" "$hostname" \
@@ -347,6 +357,78 @@ cmd_pull() {
         done
     else
         do_sync pull "$target" "$subpath"
+    fi
+}
+
+# ── diff ──────────────────────────────────────────────────────────────────────
+
+cmd_diff() {
+    local remote="${1:-}"
+    local subpath="${2:-}"
+    [[ -z "$remote" ]] && { echo "Usage: $(basename "$0") diff REMOTE [SUBPATH]"; exit 1; }
+
+    validate_remote "$remote"
+    require_connection "$remote"
+
+    local host user rpath
+    host=$(remote_var "$remote" HOST)
+    user=$(remote_var "$remote" USER)
+    rpath=$(remote_var "$remote" PATH)
+
+    subpath="${subpath#/}"
+    subpath="${subpath%/}"
+
+    local local_base="${DATA_ROOT%/}"
+    local remote_base="${rpath%/}/data"
+
+    local local_path remote_path
+    if [[ -n "$subpath" ]]; then
+        local_path="${local_base}/${subpath}"
+        remote_path="${remote_base}/${subpath}"
+    else
+        local_path="${local_base}"
+        remote_path="${remote_base}"
+    fi
+
+    local ssh_e
+    ssh_e=$(ssh_e_flag "$remote")
+
+    local rsync_flags=(-azn --itemize-changes)
+    $VERBOSE && rsync_flags+=(-v)
+
+    echo "Comparing local ↔ ${remote}  ${subpath:-.}/"
+    echo ""
+
+    # Local → remote: files that would be pushed
+    echo "── Local only / newer locally (would push) ──"
+    local push_out
+    push_out=$(rsync "${rsync_flags[@]}" "${RSYNC_EXCLUDES[@]}" \
+        -e "$ssh_e" \
+        "${local_path}/" "${user}@${host}:${remote_path}/" 2>/dev/null) || true
+
+    if [[ -z "$push_out" ]]; then
+        echo "  (in sync)"
+    else
+        echo "$push_out" | while IFS= read -r line; do
+            echo "  $line"
+        done
+    fi
+
+    echo ""
+
+    # Remote → local: files that would be pulled
+    echo "── Remote only / newer on ${remote} (would pull) ──"
+    local pull_out
+    pull_out=$(rsync "${rsync_flags[@]}" "${RSYNC_EXCLUDES[@]}" \
+        -e "$ssh_e" \
+        "${user}@${host}:${remote_path}/" "${local_path}/" 2>/dev/null) || true
+
+    if [[ -z "$pull_out" ]]; then
+        echo "  (in sync)"
+    else
+        echo "$pull_out" | while IFS= read -r line; do
+            echo "  $line"
+        done
     fi
 }
 
@@ -568,7 +650,7 @@ EOF
 # ── usage ─────────────────────────────────────────────────────────────────────
 
 usage() {
-    sed -n '3,43p' "$0" | sed 's/^# \?//'
+    sed -n '3,46p' "$0" | sed 's/^# \?//'
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
@@ -581,6 +663,7 @@ case "$COMMAND" in
     status)     cmd_status ;;
     push)       cmd_push       "$@" ;;
     pull)       cmd_pull       "$@" ;;
+    diff)       cmd_diff       "$@" ;;
     manifest)   cmd_manifest   "$@" ;;
     catalog)    cmd_catalog ;;
     help|--help|-h) usage ;;

@@ -27,7 +27,7 @@ Fill in `YOUR_ALCF_USERNAME`, `YOUR_PROJECT`, `YOUR_SPARK_USERNAME`, and the Spa
 **2. (Optional) Put the script on your PATH:**
 
 ```bash
-ln -s "$(pwd)/sync/biom3sync.sh" ~/bin/biom3sync
+ln -s "$(pwd)/sync/biom3sync.sh" /usr/local/bin/biom3sync
 ```
 
 ## Usage
@@ -41,6 +41,7 @@ Commands:
   status                              show connection status for all remotes
   push       [REMOTE|all] [SUBPATH]   push data to remote(s)
   pull       [REMOTE|all] [SUBPATH]   pull data from remote(s)
+  diff       REMOTE [SUBPATH]        compare local and remote data
   manifest   [-d DEPTH] [--no-checksum]   generate manifest.json + manifest.txt
   catalog                             add stub entries to CATALOG.md for new directories
 
