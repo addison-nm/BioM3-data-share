@@ -11,3 +11,7 @@ data/
 *.tmp
 *.swp
 .~lock.*
+
+# Download credentials (contain passwords)
+smart_credentials.txt
+brenda_key.txt

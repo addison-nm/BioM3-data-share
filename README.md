@@ -56,6 +56,10 @@ sudo find data/ -type f -exec chmod 664 {} +
 
 Here group members can create, modify, and delete files. The setgid bit ensures new entries inherit the group ownership.
 
+## Downloading Databases
+
+The `download` directory contains scripts for downloading bioinformatics reference databases (NR, Pfam, SwissProt, SMART, ExPASy Enzyme, BRENDA) with retry logic, MD5 verification, and provenance logging. See [download/README.md](download/README.md) for setup and usage.
+
 ## Acknowledgments
 
 This project was built with assistance from [Claude Code](https://claude.ai/claude-code).
