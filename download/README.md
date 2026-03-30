@@ -18,6 +18,7 @@ This pipeline downloads six major bioinformatics databases for local use in sequ
 | SMART | Domain HMM library | EMBL | Yes (free account) | ~50 MB |
 | ExPASy Enzyme | Enzyme nomenclature | ExPASy FTP | No | ~10 MB |
 | BRENDA | Enzyme function & kinetics | BRENDA SOAP | Yes (free account) | ~2 GB |
+| NCBI Taxonomy | Taxonomic classification + accession mapping | NCBI FTP | No | ~11 GB |
 
 ---
 
@@ -35,7 +36,7 @@ This pipeline downloads six major bioinformatics databases for local use in sequ
 
 ### Disk space
 
-Reserve at least **450 GB** of free space before running the full suite. NR alone can exceed 300 GB compressed.
+Reserve at least **460 GB** of free space before running the full suite. NR alone can exceed 300 GB compressed; the NCBI Taxonomy accession mapping adds ~10 GB.
 
 ---
 
@@ -46,20 +47,20 @@ Reserve at least **450 GB** of free space before running the full suite. NR alon
 cd /path/to/BioM3-data-share/download
 
 # 2. (If downloading SMART) create credentials file
-cat > smart_credentials.txt <<EOF
+cat > download/credentials/smart_credentials.txt <<EOF
 username=YOUR_SMART_USERNAME
 password=YOUR_SMART_PASSWORD
 EOF
-chmod 600 smart_credentials.txt
+chmod 600 download/credentials/smart_credentials.txt
 
 # 3. (If downloading BRENDA) create credentials file
 #    BRENDA expects your password as a SHA-256 hex digest
 python3 -c "import hashlib; print(hashlib.sha256(b'YOUR_BRENDA_PASSWORD').hexdigest())"
-cat > brenda_key.txt <<EOF
+cat > download/credentials/brenda_key.txt <<EOF
 email=YOUR_BRENDA_EMAIL
 password=<SHA256_OUTPUT_FROM_ABOVE>
 EOF
-chmod 600 brenda_key.txt
+chmod 600 download/credentials/brenda_key.txt
 
 # 4. Run the downloader
 bash download_databases.sh -o /mnt/databases
@@ -139,7 +140,7 @@ SMART provides HMM profiles for signalling and extracellular domain families. Do
 
 **Setup:**
 1. Register at https://smart.embl.de/ (free, immediate).
-2. Add credentials to `smart_credentials.txt` (format shown in Quick Start above).
+2. Add credentials to `download/credentials/smart_credentials.txt` (format shown in Quick Start above).
 3. The script performs a form-login, saves a session cookie, then downloads `SMART_hmms.gz`.
 
 **Without credentials:** The script falls back to downloading the publicly accessible domain description list (`SMART_domains.txt`).
@@ -177,13 +178,56 @@ BRENDA is a comprehensive enzyme information system with kinetic parameters, org
 **Setup:**
 1. Register at https://www.brenda-enzymes.org/register.php (free).
 2. Compute the SHA-256 hash of your password (see Quick Start).
-3. Add credentials to `brenda_key.txt`.
+3. Add credentials to `download/credentials/brenda_key.txt`.
 4. The script uses the BRENDA SOAP API via the `zeep` Python library.
 5. The full flat-file dump (`brenda_download.txt.gz`) can also be downloaded manually from https://www.brenda-enzymes.org/download_brenda_without_license.php after login.
 
 **BRENDA license:** Free for academic use. Commercial use requires a separate licence. See https://www.brenda-enzymes.org/download.php.
 
 **Citation:** Jeske et al. *Nucleic Acids Res.* 2019, BRENDA in 2019: a European ELIXIR core data resource.
+
+---
+
+### 7. NCBI Taxonomy — Taxonomic Classification & Protein Mapping
+
+**URL bases:**
+- `https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/new_taxdump/`
+- `https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid/`
+
+The NCBI Taxonomy database provides the hierarchical taxonomic tree and maps protein accessions to taxonomy IDs, enabling taxonomic lineage annotation of protein sequences (e.g. for the NR database).
+
+Files downloaded:
+
+| File | Contents |
+|------|----------|
+| `new_taxdump.tar.gz` | Enhanced taxonomy dump (extracted automatically) |
+| `prot.accession2taxid.gz` | Protein accession → taxonomy ID mapping (~10 GB) |
+
+**Extracted taxonomy files** (from `new_taxdump.tar.gz`):
+
+| File | Contents |
+|------|----------|
+| `nodes.dmp` | Taxonomic tree structure (parent-child relationships, ranks) |
+| `names.dmp` | Taxonomic names and synonyms |
+| `rankedlineage.dmp` | Complete ranked lineage for each taxid |
+| `fullnamelineage.dmp` | Full name lineage strings |
+| `taxidlineage.dmp` | Taxid-based lineage |
+| `merged.dmp` | Merged (deprecated) taxonomy IDs |
+| `delnodes.dmp` | Deleted nodes |
+| `typematerial.dmp` | Type material information |
+| `host.dmp` | Host organism information |
+
+**Citation:** Schoch et al., *Database* 2020, NCBI Taxonomy: a comprehensive update on curation, resources and tools.
+
+**Reproducibility note:** Taxonomy data is updated as new organisms are added. Record the download timestamp from `provenance.tsv`. For Diamond database construction, combine `nodes.dmp` and `names.dmp` from this download with the NR FASTA and `prot.accession2taxid.gz`.
+
+**Diamond integration:**
+```bash
+diamond makedb --in nr.faa --db nr \
+    --taxonmap ncbi_taxonomy/prot.accession2taxid.gz \
+    --taxonnodes ncbi_taxonomy/nodes.dmp \
+    --taxonnames ncbi_taxonomy/names.dmp
+```
 
 ---
 
@@ -214,8 +258,20 @@ databases/
 │   ├── enzyme.dat
 │   ├── enzyme.rdf
 │   └── enzuser.txt
-└── brenda/
-    └── brenda_download_YYYYMMDD.txt
+├── brenda/
+│   └── brenda_download_YYYYMMDD.txt
+└── ncbi_taxonomy/
+    ├── new_taxdump.tar.gz
+    ├── prot.accession2taxid.gz
+    ├── nodes.dmp
+    ├── names.dmp
+    ├── rankedlineage.dmp
+    ├── fullnamelineage.dmp
+    ├── taxidlineage.dmp
+    ├── merged.dmp
+    ├── delnodes.dmp
+    ├── typematerial.dmp
+    └── host.dmp
 ```
 
 ### provenance.tsv format
@@ -253,6 +309,6 @@ download_timestamp        filename                  source_url                  
 
 ## Security Notes
 
-- `smart_credentials.txt` and `brenda_key.txt` contain passwords. Set permissions to `600` and exclude from version control.
+- Credential files live in `download/credentials/`, which is gitignored (only the `.gitkeep` is tracked). Set file permissions to `600`.
 - Delete `smart/smart_cookies.txt` after downloading — it is a live session token.
 - BRENDA stores the password as a SHA-256 hex digest over the SOAP API; do not store your plain-text password anywhere in this repository.

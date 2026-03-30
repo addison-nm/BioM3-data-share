@@ -14,5 +14,8 @@ databases/
 .~lock.*
 
 # Download credentials (contain passwords)
+download/credentials/*
+!download/credentials/.gitkeep
+!download/credentials/README.md
 smart_credentials.txt
 brenda_key.txt

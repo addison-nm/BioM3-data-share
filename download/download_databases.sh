@@ -2,7 +2,8 @@
 # =============================================================================
 # download_databases.sh
 # Downloads NR, Pfam, SwissProt, SMART, ExPASy (UniProtKB/Swiss-Prot flat file),
-# and BRENDA databases with integrity checks and timestamped logging.
+# BRENDA, and NCBI Taxonomy databases with integrity checks and timestamped
+# logging.
 #
 # Usage:
 #   bash download_databases.sh [OPTIONS]
@@ -10,14 +11,14 @@
 # Options:
 #   -o DIR    Output base directory (default: ./databases)
 #   -d DB     Download a specific database (can be repeated)
-#             Valid: nr, pfam, swissprot, smart, expasy, brenda
+#             Valid: nr, pfam, swissprot, smart, expasy, brenda, ncbi_taxonomy
 #             If omitted, all databases are downloaded.
 #   -h        Show this help message
 #
 # Requirements:
 #   curl, md5sum/md5, gunzip (standard on Linux/macOS)
-#   For SMART: account credentials in smart_credentials.txt (see README)
-#   For BRENDA: SOAP API key in brenda_key.txt (see README)
+#   For SMART: account credentials in credentials/smart_credentials.txt (see README)
+#   For BRENDA: SOAP API key in credentials/brenda_key.txt (see README)
 # =============================================================================
 
 set -euo pipefail
@@ -26,7 +27,7 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 BASE_DIR="./databases"
-ALL_DBS=(nr pfam swissprot smart expasy brenda)
+ALL_DBS=(nr pfam swissprot smart expasy brenda ncbi_taxonomy)
 SELECTED_DBS=()
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 DATE_TAG=$(date -u +"%Y%m%d")
@@ -69,7 +70,8 @@ should_download() {
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="${PROJECT_ROOT}/.logs"
-mkdir -p "$LOG_DIR"
+CRED_DIR="${SCRIPT_DIR}/credentials"
+mkdir -p "$LOG_DIR" "$CRED_DIR"
 LOG_FILE="$LOG_DIR/download_${DATE_TAG}.log"
 
 log() {
@@ -248,7 +250,7 @@ download_swissprot() {
 # 4. SMART (Simple Modular Architecture Research Tool)
 #    Source  : EMBL — smart.embl.de
 #    Notes   : SMART HMM library requires a free registered account.
-#              Place username and password in smart_credentials.txt:
+#              Place username and password in credentials/smart_credentials.txt:
 #                  username=YOUR_USERNAME
 #                  password=YOUR_PASSWORD
 #              The script will attempt a form-based login and cookie-based
@@ -260,7 +262,7 @@ download_smart() {
     mkdir -p "$db_dir"
     info "--- SMART ---"
 
-    local cred_file="smart_credentials.txt"
+    local cred_file="$CRED_DIR/smart_credentials.txt"
     local hmm_url="https://smart.embl.de/smart/do_annotation.pl?BLAST=DUMMY&DOMAIN=ALL&BLAST=DUMMY&THRESHOLDS=gathering"
 
     if [[ -f "$cred_file" ]]; then
@@ -335,12 +337,12 @@ download_brenda() {
     mkdir -p "$db_dir"
     info "--- BRENDA ---"
 
-    local cred_file="brenda_key.txt"
+    local cred_file="$CRED_DIR/brenda_key.txt"
 
     if [[ ! -f "$cred_file" ]]; then
         warn "BRENDA: $cred_file not found."
         warn "BRENDA: Register free at https://www.brenda-enzymes.org/register.php"
-        warn "BRENDA: Then create brenda_key.txt with:"
+        warn "BRENDA: Then create download/credentials/brenda_key.txt with:"
         warn "BRENDA:   email=YOUR_EMAIL"
         warn "BRENDA:   password=YOUR_SHA256_PASSWORD"
         warn "BRENDA: Re-run with -d brenda to download."
@@ -393,6 +395,35 @@ EOF
 }
 
 # ===========================================================================
+# 7. NCBI Taxonomy (Taxonomic classification + protein-to-taxid mapping)
+#    Source  : NCBI FTP — ftp.ncbi.nlm.nih.gov
+#    Files   : new_taxdump.tar.gz — enhanced taxonomy dump with lineage info
+#              prot.accession2taxid.gz — protein accession to taxonomy ID map
+#    Notes   : The enhanced dump includes rankedlineage.dmp, nodes.dmp,
+#              names.dmp, and other files needed to reconstruct full taxonomic
+#              lineages. ~500 MB compressed for taxonomy, ~10 GB for accession
+#              mapping.
+# ===========================================================================
+download_ncbi_taxonomy() {
+    local db_dir="$BASE_DIR/ncbi_taxonomy"
+    mkdir -p "$db_dir"
+    info "--- NCBI Taxonomy Database ---"
+
+    # Enhanced taxonomy dump (includes ranked lineage, full name lineage, etc.)
+    local taxdump_url="https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/new_taxdump/new_taxdump.tar.gz"
+    download_file "$taxdump_url" "$db_dir/new_taxdump.tar.gz"
+
+    info "NCBI Taxonomy: extracting new_taxdump.tar.gz"
+    tar -zxf "$db_dir/new_taxdump.tar.gz" -C "$db_dir"
+
+    # Protein accession to taxonomy ID mapping
+    local acc2taxid_url="https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz"
+    download_file "$acc2taxid_url" "$db_dir/prot.accession2taxid.gz"
+
+    success "NCBI Taxonomy: downloads complete — $db_dir"
+}
+
+# ===========================================================================
 # Run selected databases
 # ===========================================================================
 for db in "${ALL_DBS[@]}"; do
@@ -405,7 +436,8 @@ for db in "${ALL_DBS[@]}"; do
         swissprot)  download_swissprot ;;
         smart)      download_smart ;;
         expasy)     download_expasy ;;
-        brenda)     download_brenda ;;
+        brenda)         download_brenda ;;
+        ncbi_taxonomy)  download_ncbi_taxonomy ;;
     esac
 done
 
