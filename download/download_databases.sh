@@ -8,7 +8,7 @@
 #   bash download_databases.sh [OPTIONS]
 #
 # Options:
-#   -o DIR    Output base directory (default: ./data/databases)
+#   -o DIR    Output base directory (default: ./databases)
 #   -d DB     Download a specific database (can be repeated)
 #             Valid: nr, pfam, swissprot, smart, expasy, brenda
 #             If omitted, all databases are downloaded.
@@ -25,7 +25,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-BASE_DIR="./data/databases"
+BASE_DIR="./databases"
 ALL_DBS=(nr pfam swissprot smart expasy brenda)
 SELECTED_DBS=()
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -65,8 +65,12 @@ should_download() {
 # ---------------------------------------------------------------------------
 # Logging helpers
 # ---------------------------------------------------------------------------
-mkdir -p "$BASE_DIR/logs"
-LOG_FILE="$BASE_DIR/logs/download_${DATE_TAG}.log"
+# Resolve project root (one level up from this script's directory)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOG_DIR="${PROJECT_ROOT}/.logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/download_${DATE_TAG}.log"
 
 log() {
     local level="$1"; shift

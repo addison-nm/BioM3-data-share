@@ -12,7 +12,7 @@ Files added:
 
 ## Key design decisions
 
-- **Default output to `data/databases/`** — downloads land inside `data/`, which is already gitignored and synced via rsync.
+- **Default output to `databases/`** — downloads land in the project root (gitignored), separate from `data/` which is synced via rsync.
 - **Opt-in database selection (`-d`)** — use `-d pfam -d swissprot` to download specific databases. Without `-d`, all are downloaded.
 - **Switched from wget to curl** — wget's `--continue` flag is silently disabled when combined with `-O`, breaking resume. curl's `-C -` works correctly with `-o`. curl is also pre-installed on macOS.
 - **Clean log files** — curl progress bar (`--progress-bar`) goes to stderr (shown on terminal) while only structured `[timestamp] [LEVEL] message` lines are written to the log file.

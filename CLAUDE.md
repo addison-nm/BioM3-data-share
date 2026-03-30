@@ -7,6 +7,7 @@ BioM3-data-share is a shared data repository for BioM3 model weights and dataset
 - `data/` — model weights and datasets (not tracked by git, synced via rsync)
   - `data/models/` — trained model weights (Facilitator, LLMs, PenCL, ProteoScribe)
   - `data/datasets/` — training data (CM, SH3, Pfam, SwissProt, etc.)
+- `databases/` — downloaded reference databases (not tracked by git, not synced)
 - `sync/` — sync tooling (biom3sync.sh, config, docs)
 - `.logs/` — sync logs (excluded from rsync, synced via OneDrive)
 - `download/` — database download scripts (NR, Pfam, SwissProt, SMART, ExPASy, BRENDA)
