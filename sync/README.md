@@ -65,7 +65,7 @@ biom3sync status
 # Push/pull — no re-authentication needed while session is open
 biom3sync push aurora                  # push everything to aurora
 biom3sync push aurora datasets/CM      # push one subdirectory
-biom3sync pull spark models/LLMs       # pull from spark (no connect needed)
+biom3sync pull spark weights/LLMs      # pull from spark (no connect needed)
 biom3sync -n push all                  # dry-run to all three remotes
 
 # Close sessions when done

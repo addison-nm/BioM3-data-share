@@ -23,14 +23,14 @@
 #   spark             DGX Spark (SSH key via Tailscale, no connect needed)
 #
 # SUBPATH  Optional path relative to BioM3-data-share root.
-#   e.g.   datasets/CM    models/LLMs
+#   e.g.   datasets/CM    weights/LLMs
 #
 # EXAMPLES
 #   biom3sync connect aurora                  # authenticate once (2FA prompt)
 #   biom3sync push aurora                     # push everything to aurora
 #   biom3sync push aurora datasets/CM         # push only datasets/CM to aurora
 #   biom3sync -n push all                     # dry-run push to all remotes
-#   biom3sync pull spark models               # pull models/ from spark
+#   biom3sync pull spark weights               # pull weights/ from spark
 #   biom3sync disconnect aurora
 #   biom3sync diff spark                       # compare local vs spark
 #   biom3sync diff aurora datasets/CM          # compare a subdirectory

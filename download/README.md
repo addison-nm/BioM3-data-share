@@ -194,9 +194,6 @@ After a full run, the output directory will look like this:
 ```
 databases/
 ├── provenance.tsv          — master ledger: timestamp, filename, URL, MD5
-├── logs/
-│   ├── download_YYYYMMDD.log
-│   └── verify_YYYYMMDDTHHMMSSZ.log
 ├── nr/
 │   ├── nr.00.gz
 │   ├── nr.01.gz

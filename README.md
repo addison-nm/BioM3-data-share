@@ -4,9 +4,11 @@ This directory contains shared model weights and datasets for BioM3 development.
 
 ## About
 
-The `models` directory contains weights of trained BioM3 model instances, and contains subdirectories for each component of BioM3.
+The `data/weights/` directory contains weights of trained BioM3 model instances, with subdirectories for each component of BioM3.
 
-The `datasets` directory contains assorted data on which one can train BioM3 components.
+The `data/datasets/` directory contains assorted data on which one can train BioM3 components.
+
+The `databases/` directory contains downloaded bioinformatics reference databases (NR, Pfam, SwissProt, etc.). These are downloaded per-machine and are not synced across clusters.
 
 For questions, contact Addison at <addison@thenaturalmachine.ai>.
 
