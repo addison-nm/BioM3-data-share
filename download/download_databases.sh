@@ -17,7 +17,6 @@
 #
 # Requirements:
 #   curl, md5sum/md5, gunzip (standard on Linux/macOS)
-#   For SMART: account credentials in credentials/smart_credentials.txt (see README)
 #   For BRENDA: SOAP API key in credentials/brenda_key.txt (see README)
 # =============================================================================
 
@@ -249,55 +248,18 @@ download_swissprot() {
 # ===========================================================================
 # 4. SMART (Simple Modular Architecture Research Tool)
 #    Source  : EMBL — smart.embl.de
-#    Notes   : SMART HMM library requires a free registered account.
-#              Place username and password in credentials/smart_credentials.txt:
-#                  username=YOUR_USERNAME
-#                  password=YOUR_PASSWORD
-#              The script will attempt a form-based login and cookie-based
-#              download. Without credentials, only the public HMM file is
-#              available and a warning is issued.
+#    Files   : SMART_domains.txt — domain accessions, names, and descriptions
+#    Notes   : The domain descriptions file is publicly available with no
+#              registration required.
 # ===========================================================================
 download_smart() {
     local db_dir="$BASE_DIR/smart"
     mkdir -p "$db_dir"
     info "--- SMART ---"
 
-    local cred_file="$CRED_DIR/smart_credentials.txt"
-    local hmm_url="https://smart.embl.de/smart/do_annotation.pl?BLAST=DUMMY&DOMAIN=ALL&BLAST=DUMMY&THRESHOLDS=gathering"
+    download_file "https://smart.embl.de/smart/descriptions.pl" "$db_dir/SMART_domains.txt"
 
-    if [[ -f "$cred_file" ]]; then
-        local username password
-        username=$(grep '^username=' "$cred_file" | cut -d= -f2)
-        password=$(grep '^password=' "$cred_file" | cut -d= -f2)
-
-        info "SMART: logging in as $username"
-        curl -L -s \
-            -c "$db_dir/smart_cookies.txt" \
-            -d "action=login&username=${username}&password=${password}" \
-            -o /dev/null \
-            "https://smart.embl.de/smart/login.cgi" 2>>"$LOG_FILE"
-
-        info "SMART: downloading HMM library (authenticated)"
-        curl -L \
-            -b "$db_dir/smart_cookies.txt" \
-            -o "$db_dir/SMART_hmms.gz" \
-            "https://smart.embl.de/smart/SMART_hmms.gz" 2>>"$LOG_FILE"
-    else
-        warn "SMART: $cred_file not found — skipping authenticated download."
-        warn "SMART: Create $cred_file with username= and password= lines and re-run."
-        warn "SMART: Register free at https://smart.embl.de/"
-        # Download the publicly accessible domain list as a fallback
-        info "SMART: downloading public domain list instead"
-        curl -L -o "$db_dir/SMART_domains.txt" \
-            "https://smart.embl.de/smart/descriptions.pl" 2>>"$LOG_FILE" || true
-    fi
-
-    # Record provenance regardless
-    cat >> "$BASE_DIR/provenance.tsv" <<EOF
-$(date -u +"%Y-%m-%dT%H:%M:%SZ")	SMART_hmms.gz	https://smart.embl.de/smart/SMART_hmms.gz	manual-login-required
-EOF
-
-    success "SMART: step complete — $db_dir"
+    success "SMART: downloads complete — $db_dir"
 }
 
 # ===========================================================================
@@ -339,7 +301,7 @@ download_brenda() {
 
     local cred_file="$CRED_DIR/brenda_key.txt"
 
-    if [[ ! -f "$cred_file" ]]; then
+    if [[ ! -f "$cred_file" ]] || ! grep -q '^email=' "$cred_file" || ! grep -q '^password=' "$cred_file"; then
         warn "BRENDA: $cred_file not found."
         warn "BRENDA: Register free at https://www.brenda-enzymes.org/register.php"
         warn "BRENDA: Then create download/credentials/brenda_key.txt with:"

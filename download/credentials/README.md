@@ -3,24 +3,7 @@
 This directory stores credential files used by `download_databases.sh`. All files
 except this README and `.gitkeep` are gitignored and must never be committed.
 
----
-
-## SMART — `smart_credentials.txt`
-
-Create the file with your registered SMART account details:
-
-```
-username=YOUR_SMART_USERNAME
-password=YOUR_SMART_PASSWORD
-```
-
-Register for a free account at <https://smart.embl.de/> if you don't have one.
-
-Then lock down permissions:
-
-```bash
-chmod 600 download/credentials/smart_credentials.txt
-```
+Currently only BRENDA requires credentials. SMART data is publicly available.
 
 ---
 

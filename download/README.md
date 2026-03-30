@@ -8,14 +8,14 @@
 
 ## Overview
 
-This pipeline downloads six major bioinformatics databases for local use in sequence analysis, functional annotation, and enzyme research. The main script (`download_databases.sh`) handles downloading, retry logic, MD5 recording, and provenance logging. A companion script (`verify_checksums.sh`) lets you re-verify file integrity at any time.
+This pipeline downloads seven bioinformatics databases for local use in sequence analysis, functional annotation, and enzyme research. The main script (`download_databases.sh`) handles downloading, retry logic, MD5 recording, and provenance logging. A companion script (`verify_checksums.sh`) lets you re-verify file integrity at any time.
 
 | Database | Type | Source | Auth required? | Typical size |
 |----------|------|--------|----------------|--------------|
 | NR | Protein sequences (all) | NCBI FTP | No | ~300 GB compressed |
 | Pfam | HMM profiles + alignments | EBI FTP | No | ~10 GB |
 | SwissProt | Curated protein sequences | UniProt FTP | No | ~1 GB |
-| SMART | Domain HMM library | EMBL | Yes (free account) | ~50 MB |
+| SMART | Domain descriptions | EMBL | No | <1 MB |
 | ExPASy Enzyme | Enzyme nomenclature | ExPASy FTP | No | ~10 MB |
 | BRENDA | Enzyme function & kinetics | BRENDA SOAP | Yes (free account) | ~2 GB |
 | NCBI Taxonomy | Taxonomic classification + accession mapping | NCBI FTP | No | ~11 GB |
@@ -46,14 +46,7 @@ Reserve at least **460 GB** of free space before running the full suite. NR alon
 # 1. Clone or copy this directory to your machine
 cd /path/to/BioM3-data-share/download
 
-# 2. (If downloading SMART) create credentials file
-cat > download/credentials/smart_credentials.txt <<EOF
-username=YOUR_SMART_USERNAME
-password=YOUR_SMART_PASSWORD
-EOF
-chmod 600 download/credentials/smart_credentials.txt
-
-# 3. (If downloading BRENDA) create credentials file
+# 2. (If downloading BRENDA) create credentials file
 #    BRENDA expects your password as a SHA-256 hex digest
 python3 -c "import hashlib; print(hashlib.sha256(b'YOUR_BRENDA_PASSWORD').hexdigest())"
 cat > download/credentials/brenda_key.txt <<EOF
@@ -62,10 +55,10 @@ password=<SHA256_OUTPUT_FROM_ABOVE>
 EOF
 chmod 600 download/credentials/brenda_key.txt
 
-# 4. Run the downloader
+# 3. Run the downloader
 bash download_databases.sh -o /mnt/databases
 
-# 5. Verify checksums after download completes
+# 4. Verify checksums after download completes
 bash verify_checksums.sh /mnt/databases
 ```
 
@@ -134,16 +127,15 @@ Files downloaded:
 
 ### 4. SMART — Simple Modular Architecture Research Tool
 
-**Base URL:** `https://smart.embl.de/`
+**URL:** `https://smart.embl.de/smart/descriptions.pl`
 
-SMART provides HMM profiles for signalling and extracellular domain families. Downloading the full HMM library requires a **free registered account** at https://smart.embl.de/.
+SMART provides domain annotations for signalling and extracellular domain families. The domain descriptions file (accessions, names, and functional descriptions) is publicly available with no registration required.
 
-**Setup:**
-1. Register at https://smart.embl.de/ (free, immediate).
-2. Add credentials to `download/credentials/smart_credentials.txt` (format shown in Quick Start above).
-3. The script performs a form-login, saves a session cookie, then downloads `SMART_hmms.gz`.
+Files downloaded:
 
-**Without credentials:** The script falls back to downloading the publicly accessible domain description list (`SMART_domains.txt`).
+| File | Contents |
+|------|----------|
+| `SMART_domains.txt` | Domain accessions, names, and descriptions |
 
 **Citation:** Letunic & Bork. *Nucleic Acids Res.* 2023, SMART: expanding the functional annotation of proteins.
 
@@ -252,8 +244,7 @@ databases/
 │   ├── uniprot_sprot.dat.gz
 │   └── reldate.txt
 ├── smart/
-│   ├── SMART_hmms.gz
-│   └── smart_cookies.txt    — delete after use
+│   └── SMART_domains.txt
 ├── expasy/
 │   ├── enzyme.dat
 │   ├── enzyme.rdf
@@ -309,6 +300,5 @@ download_timestamp        filename                  source_url                  
 
 ## Security Notes
 
-- Credential files live in `download/credentials/`, which is gitignored (only the `.gitkeep` is tracked). Set file permissions to `600`.
-- Delete `smart/smart_cookies.txt` after downloading — it is a live session token.
+- Credential files live in `download/credentials/`, which is gitignored (only the `.gitkeep` and `README.md` are tracked). Set file permissions to `600`.
 - BRENDA stores the password as a SHA-256 hex digest over the SOAP API; do not store your plain-text password anywhere in this repository.
