@@ -8,13 +8,14 @@
 
 ## Overview
 
-This pipeline downloads seven bioinformatics databases for local use in sequence analysis, functional annotation, and enzyme research. The main script (`download_databases.sh`) handles downloading, retry logic, MD5 recording, and provenance logging. A companion script (`verify_checksums.sh`) lets you re-verify file integrity at any time.
+This pipeline downloads eight bioinformatics databases for local use in sequence analysis, functional annotation, and enzyme research. The main script (`download_databases.sh`) handles downloading, retry logic, MD5 recording, and provenance logging. A companion script (`verify_checksums.sh`) lets you re-verify file integrity at any time.
 
 | Database | Type | Source | Auth required? | Typical size |
 |----------|------|--------|----------------|--------------|
 | NR | Protein sequences (all) | NCBI FTP | No | ~300 GB compressed |
 | Pfam | HMM profiles + alignments | EBI FTP | No | ~10 GB |
 | SwissProt | Curated protein sequences | UniProt FTP | No | ~1 GB |
+| TrEMBL | Unreviewed protein sequences | UniProt FTP | No | ~120 GB |
 | SMART | Domain descriptions | EMBL | No | <1 MB |
 | ExPASy Enzyme | Enzyme nomenclature | ExPASy FTP | No | ~10 MB |
 | BRENDA | Enzyme function & kinetics | BRENDA SOAP | Yes (free account) | ~2 GB |
@@ -36,7 +37,7 @@ This pipeline downloads seven bioinformatics databases for local use in sequence
 
 ### Disk space
 
-Reserve at least **460 GB** of free space before running the full suite. NR alone can exceed 300 GB compressed; the NCBI Taxonomy accession mapping adds ~10 GB.
+Reserve at least **580 GB** of free space before running the full suite. NR alone can exceed 300 GB compressed; TrEMBL adds ~120 GB; the NCBI Taxonomy accession mapping adds ~10 GB.
 
 ---
 
@@ -125,7 +126,27 @@ Files downloaded:
 
 ---
 
-### 4. SMART — Simple Modular Architecture Research Tool
+### 4. TrEMBL — UniProtKB/TrEMBL (Unreviewed)
+
+**URL base:** `https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/`
+
+TrEMBL contains computationally analysed protein entries that have not yet been manually reviewed by UniProt curators. It is significantly larger than Swiss-Prot and covers a much broader set of organisms and sequences.
+
+Files downloaded:
+
+| File | Contents |
+|------|----------|
+| `uniprot_trembl.fasta.gz` | FASTA sequences (unreviewed entries) |
+| `uniprot_trembl.dat.gz` | Full flat-file with annotations, GO terms, cross-refs |
+| `reldate.txt` | Release number and date |
+
+**Citation:** The UniProt Consortium. UniProt: the universal protein knowledgebase in 2023. *Nucleic Acids Res.* 2023.
+
+**Reproducibility note:** Record the release date in `reldate.txt`. Archived releases are available at `https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/`.
+
+---
+
+### 5. SMART — Simple Modular Architecture Research Tool
 
 **URL:** `https://smart.embl.de/smart/descriptions.pl`
 
@@ -141,7 +162,7 @@ Files downloaded:
 
 ---
 
-### 5. ExPASy Enzyme Nomenclature Database
+### 6. ExPASy Enzyme Nomenclature Database
 
 **URL base:** `https://ftp.expasy.org/databases/enzyme/`
 
@@ -161,7 +182,7 @@ Files downloaded:
 
 ---
 
-### 6. BRENDA — Braunschweig Enzyme Database
+### 7. BRENDA — Braunschweig Enzyme Database
 
 **URL:** `https://www.brenda-enzymes.org/`
 
@@ -180,7 +201,7 @@ BRENDA is a comprehensive enzyme information system with kinetic parameters, org
 
 ---
 
-### 7. NCBI Taxonomy — Taxonomic Classification & Protein Mapping
+### 8. NCBI Taxonomy — Taxonomic Classification & Protein Mapping
 
 **URL bases:**
 - `https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/new_taxdump/`
@@ -243,6 +264,10 @@ databases/
 │   ├── uniprot_sprot.fasta.gz
 │   ├── uniprot_sprot.dat.gz
 │   └── reldate.txt
+├── trembl/
+│   ├── uniprot_trembl.fasta.gz
+│   ├── uniprot_trembl.dat.gz
+│   └── reldate.txt
 ├── smart/
 │   └── SMART_domains.txt
 ├── expasy/
@@ -277,7 +302,7 @@ download_timestamp        filename                  source_url                  
 ## Reproducibility Checklist
 
 - [ ] `provenance.tsv` committed to version control (without credential files)
-- [ ] Release version recorded for Pfam (`relnotes.txt`) and SwissProt (`reldate.txt`)
+- [ ] Release version recorded for Pfam (`relnotes.txt`), SwissProt (`reldate.txt`), and TrEMBL (`reldate.txt`)
 - [ ] Download date recorded (automatic in `provenance.tsv`)
 - [ ] `verify_checksums.sh` run and passed after download
 - [ ] SMART and BRENDA credential files **not** committed to version control (add to `.gitignore`)

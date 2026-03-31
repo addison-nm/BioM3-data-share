@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
 # download_databases.sh
-# Downloads NR, Pfam, SwissProt, SMART, ExPASy (UniProtKB/Swiss-Prot flat file),
-# BRENDA, and NCBI Taxonomy databases with integrity checks and timestamped
-# logging.
+# Downloads NR, Pfam, SwissProt, TrEMBL, SMART, ExPASy (UniProtKB/Swiss-Prot
+# flat file), BRENDA, and NCBI Taxonomy databases with integrity checks and
+# timestamped logging.
 #
 # Usage:
 #   bash download_databases.sh [OPTIONS]
@@ -11,8 +11,8 @@
 # Options:
 #   -o DIR    Output base directory (default: ./databases)
 #   -d DB     Download a specific database (can be repeated)
-#             Valid: nr, nr_blast, pfam, swissprot, smart, expasy, brenda,
-#                    ncbi_taxonomy
+#             Valid: nr, nr_blast, pfam, swissprot, trembl, smart, expasy,
+#                    brenda, ncbi_taxonomy
 #             If omitted, all databases are downloaded.
 #             nr       = raw FASTA sequences (single nr.gz file)
 #             nr_blast = pre-formatted BLAST database (numbered volumes)
@@ -29,7 +29,7 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 BASE_DIR="./databases"
-ALL_DBS=(nr nr_blast pfam swissprot smart expasy brenda ncbi_taxonomy)
+ALL_DBS=(nr nr_blast pfam swissprot trembl smart expasy brenda ncbi_taxonomy)
 SELECTED_DBS=()
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 DATE_TAG=$(date -u +"%Y%m%d")
@@ -293,7 +293,30 @@ download_swissprot() {
 }
 
 # ===========================================================================
-# 4. SMART (Simple Modular Architecture Research Tool)
+# 4. TrEMBL  (unreviewed UniProtKB entries)
+#    Source  : UniProt FTP — ftp.uniprot.org
+#    Files   : uniprot_trembl.fasta.gz  (FASTA sequences)
+#              uniprot_trembl.dat.gz    (full flat-file annotations)
+#              reldate.txt              (release date + version)
+#    Notes   : ~120 GB compressed total. TrEMBL contains computationally
+#              analysed entries not yet reviewed by UniProt curators.
+# ===========================================================================
+download_trembl() {
+    local db_dir="$BASE_DIR/trembl"
+    mkdir -p "$db_dir"
+    info "--- TrEMBL (UniProtKB/TrEMBL — unreviewed) ---"
+
+    local base_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete"
+
+    for fname in uniprot_trembl.fasta.gz uniprot_trembl.dat.gz reldate.txt; do
+        download_file "$base_url/$fname" "$db_dir/$fname"
+    done
+
+    success "TrEMBL: downloads complete — $db_dir"
+}
+
+# ===========================================================================
+# 5. SMART (Simple Modular Architecture Research Tool)
 #    Source  : EMBL — smart.embl.de
 #    Files   : SMART_domains.txt — domain accessions, names, and descriptions
 #    Notes   : The domain descriptions file is publicly available with no
@@ -310,7 +333,7 @@ download_smart() {
 }
 
 # ===========================================================================
-# 5. ExPASy — here interpreted as the UniProtKB/Swiss-Prot enzyme subset
+# 6. ExPASy — here interpreted as the UniProtKB/Swiss-Prot enzyme subset
 #    and the Enzyme nomenclature database (enzyme.dat / enzyme.rdf)
 #    Source  : ExPASy FTP via UniProt / ftp.expasy.org
 #    Files   : enzyme.dat   — Enzyme nomenclature flat file
@@ -332,7 +355,7 @@ download_expasy() {
 }
 
 # ===========================================================================
-# 6. BRENDA (Braunschweig Enzyme Database)
+# 7. BRENDA (Braunschweig Enzyme Database)
 #    Source  : https://www.brenda-enzymes.org/
 #    Method  : BRENDA requires a free registered account + SOAP/REST API key.
 #              Place your email and password in brenda_key.txt:
@@ -404,7 +427,7 @@ EOF
 }
 
 # ===========================================================================
-# 7. NCBI Taxonomy (Taxonomic classification + protein-to-taxid mapping)
+# 8. NCBI Taxonomy (Taxonomic classification + protein-to-taxid mapping)
 #    Source  : NCBI FTP — ftp.ncbi.nlm.nih.gov
 #    Files   : new_taxdump.tar.gz — enhanced taxonomy dump with lineage info
 #              prot.accession2taxid.gz — protein accession to taxonomy ID map
@@ -444,6 +467,7 @@ for db in "${ALL_DBS[@]}"; do
         nr_blast)       download_nr_blast ;;
         pfam)           download_pfam ;;
         swissprot)      download_swissprot ;;
+        trembl)         download_trembl ;;
         smart)          download_smart ;;
         expasy)         download_expasy ;;
         brenda)         download_brenda ;;
