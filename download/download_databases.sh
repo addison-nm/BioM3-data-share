@@ -11,8 +11,11 @@
 # Options:
 #   -o DIR    Output base directory (default: ./databases)
 #   -d DB     Download a specific database (can be repeated)
-#             Valid: nr, pfam, swissprot, smart, expasy, brenda, ncbi_taxonomy
+#             Valid: nr, nr_blast, pfam, swissprot, smart, expasy, brenda,
+#                    ncbi_taxonomy
 #             If omitted, all databases are downloaded.
+#             nr       = raw FASTA sequences (single nr.gz file)
+#             nr_blast = pre-formatted BLAST database (numbered volumes)
 #   -h        Show this help message
 #
 # Requirements:
@@ -26,7 +29,7 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 BASE_DIR="./databases"
-ALL_DBS=(nr pfam swissprot smart expasy brenda ncbi_taxonomy)
+ALL_DBS=(nr nr_blast pfam swissprot smart expasy brenda ncbi_taxonomy)
 SELECTED_DBS=()
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 DATE_TAG=$(date -u +"%Y%m%d")
@@ -106,6 +109,7 @@ download_file() {
         if curl \
             -C - \
             -L \
+            --fail \
             --connect-timeout 30 \
             --max-time 0 \
             --retry 0 \
@@ -164,42 +168,85 @@ info "Log file     : $LOG_FILE"
 info "======================================================================"
 
 # ===========================================================================
-# 1. NCBI NR (Non-Redundant protein sequences)
-#    Source  : NCBI FTP — ftp.ncbi.nlm.nih.gov
-#    Format  : gzip-compressed FASTA, split into volumes nr.00.gz … nr.NN.gz
-#    Notes   : NR is very large (>100 GB compressed). The script downloads all
-#              volumes present on the FTP. Use -d to select specific databases.
+# 1a. NCBI NR — raw FASTA sequences
+#     Source  : NCBI FTP — ftp.ncbi.nlm.nih.gov/blast/db/FASTA/
+#     Format  : gzip-compressed FASTA (single file nr.gz)
+#     Notes   : ~100 GB compressed. Use this for custom pipelines, embedding,
+#               or building your own BLAST DB with makeblastdb.
 # ===========================================================================
 download_nr() {
     local db_dir="$BASE_DIR/nr"
     mkdir -p "$db_dir"
-    info "--- NR: NCBI Non-Redundant Protein Sequences ---"
+    info "--- NR: NCBI Non-Redundant Protein Sequences (FASTA) ---"
 
-    local base_url="https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA"
-    # NR is split into numbered volumes
-    local vol=0
-    local downloaded=0
-    while true; do
-        local vol_str; vol_str=$(printf "%02d" "$vol")
-        local fname="nr.${vol_str}.gz"
-        local url="$base_url/$fname"
+    local url="https://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz"
 
-        # Probe whether the file exists before attempting download
-        if ! curl --head --silent --fail --output /dev/null "$url" 2>/dev/null; then
-            info "NR: no more volumes found after volume $((vol - 1))"
-            break
+    download_file "$url" "$db_dir/nr.gz"
+
+    success "NR FASTA: download complete — $db_dir/nr.gz"
+}
+
+# ===========================================================================
+# 1b. NCBI NR — pre-formatted BLAST database
+#     Source  : NCBI FTP — ftp.ncbi.nlm.nih.gov/blast/db/
+#     Format  : numbered tar.gz volumes (nr.00.tar.gz … nr.NNN.tar.gz)
+#     Notes   : Ready to use with blastp/blastx. Volumes are discovered by
+#               scraping the FTP directory listing. Each volume has an MD5
+#               sidecar file for verification. Extracted in place after download.
+# ===========================================================================
+download_nr_blast() {
+    local db_dir="$BASE_DIR/nr_blast"
+    mkdir -p "$db_dir"
+    info "--- NR: Pre-formatted BLAST Database ---"
+
+    local base_url="https://ftp.ncbi.nlm.nih.gov/blast/db"
+
+    # Discover volume names from the directory listing
+    info "NR BLAST: discovering volumes from $base_url/ ..."
+    local volumes
+    volumes=$(curl -s "$base_url/" \
+        | grep -oP 'nr\.\d{3}\.tar\.gz(?=")' \
+        | sort -u -t. -k2 -n)
+
+    if [[ -z "$volumes" ]]; then
+        die "NR BLAST: could not discover any volumes — check network/FTP availability"
+    fi
+
+    local total
+    total=$(echo "$volumes" | wc -l)
+    info "NR BLAST: found $total volume(s)"
+
+    local count=0
+    while IFS= read -r fname; do
+        count=$(( count + 1 ))
+        info "NR BLAST: volume $count/$total — $fname"
+
+        download_file "$base_url/$fname" "$db_dir/$fname"
+
+        # Verify against MD5 sidecar if available
+        local md5_url="$base_url/${fname}.md5"
+        if curl --head --silent --fail --output /dev/null "$md5_url" 2>/dev/null; then
+            local expected_md5
+            expected_md5=$(curl -s "$md5_url" | awk '{print $1}')
+            local actual_md5
+            if command -v md5sum &>/dev/null; then
+                actual_md5=$(md5sum "$db_dir/$fname" | awk '{print $1}')
+            else
+                actual_md5=$(md5 -q "$db_dir/$fname")
+            fi
+            if [[ "$actual_md5" == "$expected_md5" ]]; then
+                success "MD5 verified: $fname"
+            else
+                die "MD5 MISMATCH for $fname — expected $expected_md5, got $actual_md5"
+            fi
         fi
 
-        download_file "$url" "$db_dir/$fname"
-        downloaded=$(( downloaded + 1 ))
-        vol=$(( vol + 1 ))
-    done
+        # Extract volume
+        info "NR BLAST: extracting $fname"
+        tar -zxf "$db_dir/$fname" -C "$db_dir"
+    done <<< "$volumes"
 
-    if (( downloaded == 0 )); then
-        warn "NR: no volumes downloaded — check network/FTP availability"
-    else
-        success "NR: downloaded $downloaded volume(s) to $db_dir"
-    fi
+    success "NR BLAST: $count volume(s) downloaded and extracted to $db_dir"
 }
 
 # ===========================================================================
@@ -393,11 +440,12 @@ for db in "${ALL_DBS[@]}"; do
         continue
     fi
     case "$db" in
-        nr)         download_nr ;;
-        pfam)       download_pfam ;;
-        swissprot)  download_swissprot ;;
-        smart)      download_smart ;;
-        expasy)     download_expasy ;;
+        nr)             download_nr ;;
+        nr_blast)       download_nr_blast ;;
+        pfam)           download_pfam ;;
+        swissprot)      download_swissprot ;;
+        smart)          download_smart ;;
+        expasy)         download_expasy ;;
         brenda)         download_brenda ;;
         ncbi_taxonomy)  download_ncbi_taxonomy ;;
     esac
