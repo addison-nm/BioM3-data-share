@@ -11,15 +11,17 @@
 # Options:
 #   -o DIR    Output base directory (default: ./databases)
 #   -d DB     Download a specific database (can be repeated)
-#             Valid: nr, nr_blast, pfam, swissprot, trembl, smart, expasy,
-#                    brenda, ncbi_taxonomy
+#             Valid: nr, nr_blast, pfam, swissprot, swissprot_blast, trembl,
+#                    smart, expasy, brenda, ncbi_taxonomy
 #             If omitted, all databases are downloaded.
-#             nr       = raw FASTA sequences (single nr.gz file)
-#             nr_blast = pre-formatted BLAST database (numbered volumes)
+#             nr              = raw FASTA sequences (single nr.gz file)
+#             nr_blast        = pre-formatted BLAST database (numbered volumes)
+#             swissprot_blast = BLAST database built from SwissProt FASTA
 #   -h        Show this help message
 #
 # Requirements:
 #   curl, md5sum/md5, gunzip (standard on Linux/macOS)
+#   For swissprot_blast: makeblastdb (BLAST+ suite)
 #   For BRENDA: SOAP API key in credentials/brenda_key.txt (see README)
 # =============================================================================
 
@@ -29,7 +31,7 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 BASE_DIR="./databases"
-ALL_DBS=(nr nr_blast pfam swissprot trembl smart expasy brenda ncbi_taxonomy)
+ALL_DBS=(nr nr_blast pfam swissprot swissprot_blast trembl smart expasy brenda ncbi_taxonomy)
 SELECTED_DBS=()
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 DATE_TAG=$(date -u +"%Y%m%d")
@@ -293,6 +295,69 @@ download_swissprot() {
 }
 
 # ===========================================================================
+# 3b. SwissProt BLAST database
+#     Source  : Built locally from uniprot_sprot.fasta.gz
+#     Tool    : makeblastdb (BLAST+ suite)
+#     Notes   : Downloads the SwissProt FASTA if not already present in
+#               databases/swissprot/, then builds a protein BLAST database.
+#               Requires BLAST+ to be installed (makeblastdb on PATH).
+# ===========================================================================
+download_swissprot_blast() {
+    local db_dir="$BASE_DIR/swissprot_blast"
+    local swissprot_dir="$BASE_DIR/swissprot"
+    local fasta_gz="uniprot_sprot.fasta.gz"
+    mkdir -p "$db_dir"
+    info "--- SwissProt BLAST Database ---"
+
+    # Require makeblastdb
+    if ! command -v makeblastdb &>/dev/null; then
+        die "swissprot_blast: makeblastdb not found — install BLAST+ (apt install ncbi-blast+ / conda install -c bioconda blast)"
+    fi
+
+    # Use existing SwissProt FASTA if available, otherwise download
+    if [[ -s "$swissprot_dir/$fasta_gz" ]]; then
+        info "swissprot_blast: reusing existing $swissprot_dir/$fasta_gz"
+        cp "$swissprot_dir/$fasta_gz" "$db_dir/$fasta_gz"
+    else
+        local base_url="https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete"
+        download_file "$base_url/$fasta_gz" "$db_dir/$fasta_gz"
+    fi
+
+    # Decompress
+    info "swissprot_blast: decompressing $fasta_gz"
+    gunzip -f "$db_dir/$fasta_gz"
+
+    local fasta="$db_dir/uniprot_sprot.fasta"
+    if [[ ! -s "$fasta" ]]; then
+        die "swissprot_blast: decompressed FASTA is empty or missing: $fasta"
+    fi
+
+    # Build BLAST database
+    info "swissprot_blast: running makeblastdb"
+    makeblastdb \
+        -in "$fasta" \
+        -dbtype prot \
+        -parse_seqids \
+        -title "UniProtKB/Swiss-Prot" \
+        -out "$db_dir/swissprot" \
+        2>&1 | tee -a "$LOG_FILE"
+
+    # Record provenance for the generated database
+    local db_files
+    db_files=$(ls "$db_dir"/swissprot.p* 2>/dev/null | wc -l)
+    if (( db_files == 0 )); then
+        die "swissprot_blast: makeblastdb produced no output files"
+    fi
+
+    cat >> "$BASE_DIR/provenance.tsv" <<EOF
+$(date -u +"%Y-%m-%dT%H:%M:%SZ")	swissprot_blast	makeblastdb from uniprot_sprot.fasta.gz	local-build
+EOF
+
+    success "swissprot_blast: BLAST database ready — $db_dir/swissprot ($db_files index files)"
+    info "swissprot_blast: usage: blastp -db $db_dir/swissprot -query input.fasta -out results.txt"
+}
+
+# ===========================================================================
 # 4. TrEMBL  (unreviewed UniProtKB entries)
 #    Source  : UniProt FTP — ftp.uniprot.org
 #    Files   : uniprot_trembl.fasta.gz  (FASTA sequences)
@@ -467,6 +532,7 @@ for db in "${ALL_DBS[@]}"; do
         nr_blast)       download_nr_blast ;;
         pfam)           download_pfam ;;
         swissprot)      download_swissprot ;;
+        swissprot_blast) download_swissprot_blast ;;
         trembl)         download_trembl ;;
         smart)          download_smart ;;
         expasy)         download_expasy ;;

@@ -15,6 +15,7 @@ This pipeline downloads eight bioinformatics databases for local use in sequence
 | NR | Protein sequences (all) | NCBI FTP | No | ~300 GB compressed |
 | Pfam | HMM profiles + alignments | EBI FTP | No | ~10 GB |
 | SwissProt | Curated protein sequences | UniProt FTP | No | ~1 GB |
+| SwissProt BLAST | BLAST database from SwissProt | Local build | No | ~300 MB |
 | TrEMBL | Unreviewed protein sequences | UniProt FTP | No | ~120 GB |
 | SMART | Domain descriptions | EMBL | No | <1 MB |
 | ExPASy Enzyme | Enzyme nomenclature | ExPASy FTP | No | ~10 MB |
@@ -32,6 +33,7 @@ This pipeline downloads eight bioinformatics databases for local use in sequence
 | bash | 4.0+ | Available by default on Linux; use `brew install bash` on macOS |
 | wget | 1.20+ | `apt install wget` / `brew install wget` |
 | md5sum or md5 | any | Pre-installed on Linux / macOS respectively |
+| makeblastdb | BLAST+ 2.12+ | Only required for `swissprot_blast`; `apt install ncbi-blast+` or `conda install -c bioconda blast` |
 | python3 | 3.8+ | Only required for BRENDA SOAP download |
 | zeep (Python) | 4.x | `pip install zeep` — only for BRENDA SOAP |
 
@@ -123,6 +125,33 @@ Files downloaded:
 **Citation:** The UniProt Consortium. UniProt: the universal protein knowledgebase in 2023. *Nucleic Acids Res.* 2023.
 
 **Reproducibility note:** Record the release date in `reldate.txt`. Archived releases are available at `https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/`.
+
+---
+
+### 3b. SwissProt BLAST Database
+
+Built locally from the SwissProt FASTA using `makeblastdb` (BLAST+ suite). If `databases/swissprot/uniprot_sprot.fasta.gz` already exists (from a prior `-d swissprot` run), it is reused; otherwise the FASTA is downloaded fresh.
+
+**Output directory:** `databases/swissprot_blast/`
+
+| File | Contents |
+|------|----------|
+| `swissprot.phr` | Header file |
+| `swissprot.psq` | Sequence file |
+| `swissprot.pin` | Index file |
+| `swissprot.pdb` | Sequence ID lookup |
+| `swissprot.pot` | OID-to-TI mapping |
+| `swissprot.pos` | OID offsets |
+| `swissprot.ptf` | Taxonomy info (if available) |
+| `swissprot.pto` | Trace-back offsets |
+| `uniprot_sprot.fasta` | Decompressed source FASTA |
+
+**Usage:**
+```bash
+blastp -db /path/to/databases/swissprot_blast/swissprot -query input.fasta -out results.txt
+```
+
+**Requirements:** BLAST+ suite (`makeblastdb` on PATH).
 
 ---
 
@@ -264,6 +293,11 @@ databases/
 │   ├── uniprot_sprot.fasta.gz
 │   ├── uniprot_sprot.dat.gz
 │   └── reldate.txt
+├── swissprot_blast/
+│   ├── swissprot.phr
+│   ├── swissprot.pin
+│   ├── swissprot.psq
+│   └── uniprot_sprot.fasta
 ├── trembl/
 │   ├── uniprot_trembl.fasta.gz
 │   ├── uniprot_trembl.dat.gz
