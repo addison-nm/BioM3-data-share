@@ -4,6 +4,17 @@ This directory contains shared model weights and datasets for BioM3 development.
 
 ## About
 
+BioM3-data-share is part of a multi-repo ecosystem:
+
+| Repository | Role | Description |
+|------------|------|-------------|
+| [BioM3-dev](https://github.com/addison-nm/BioM3-dev) | Core library | Python package: 3-stage pipeline, dataset construction, training |
+| **BioM3-data-share** (this repo) | Shared data | Model weights, datasets, and reference databases synced across clusters |
+| [BioM3-workflow-demo](https://github.com/natural-machine/BioM3-workflow-demo) | Demo workflows | End-to-end finetuning and generation demonstration pipeline |
+| BioM3-workspace-template | Workspace setup | *(Planned)* Standardized workspace template for new research projects |
+
+See [docs/biom3_ecosystem.md](./docs/biom3_ecosystem.md) for cross-repo workflows, version compatibility, and shared data architecture.
+
 The `data/weights/` directory contains weights of trained BioM3 model instances, with subdirectories for each component of BioM3.
 
 The `data/datasets/` directory contains assorted data on which one can train BioM3 components.
