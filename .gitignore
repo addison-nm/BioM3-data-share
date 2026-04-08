@@ -19,5 +19,9 @@ download/credentials/*
 !download/credentials/README.md
 brenda_key.txt
 
+# Local config (excludes.example is the tracked template)
+/config/excludes
+/config/*.local
+
 # Claude Code
 .claude/

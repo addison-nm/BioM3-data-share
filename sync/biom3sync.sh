@@ -48,6 +48,10 @@
 set -euo pipefail
 
 # ── defaults ──────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+EXCLUDES_FILE="${PROJECT_ROOT}/config/excludes"
+EXCLUDES_EXAMPLE="${PROJECT_ROOT}/config/excludes.example"
 CONFIG_FILE="${HOME}/.config/biom3sync/config"
 CONTROL_DIR="${HOME}/.config/biom3sync/sockets"
 CONTROL_PERSIST="4h"
@@ -64,6 +68,9 @@ RSYNC_EXCLUDES=(
     --exclude='.~lock.*'
     --exclude='.logs/'
 )
+if [[ -f "$EXCLUDES_FILE" ]]; then
+    RSYNC_EXCLUDES+=( --exclude-from="$EXCLUDES_FILE" )
+fi
 
 # ── parse flags ───────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -152,6 +159,17 @@ validate_remote() {
         echo "Unknown remote: '$remote'" >&2
         echo "Available remotes: ${REMOTES[*]}" >&2
         exit 1
+    fi
+}
+
+# Print info about config/excludes before each sync. If the live file is
+# missing but the example exists, hint at the copy step (so users coming
+# from a fresh template instantiation know how to enable custom excludes).
+announce_excludes() {
+    if [[ -f "$EXCLUDES_FILE" ]]; then
+        $VERBOSE && echo "  using excludes: $EXCLUDES_FILE"
+    elif [[ -f "$EXCLUDES_EXAMPLE" ]]; then
+        echo "  hint: cp config/excludes.example config/excludes  to enable custom excludes"
     fi
 }
 
@@ -309,6 +327,7 @@ do_sync() {
     fi
 
     $DRY_RUN && echo "  [dry run — no files will be transferred]"
+    announce_excludes
 
     local ssh_e
     ssh_e=$(ssh_e_flag "$remote")
@@ -397,6 +416,7 @@ cmd_diff() {
     $VERBOSE && rsync_flags+=(-v)
 
     echo "Comparing local ↔ ${remote}  ${subpath:-.}/"
+    announce_excludes
     echo ""
 
     # Local → remote: files that would be pushed

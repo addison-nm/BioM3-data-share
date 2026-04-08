@@ -69,6 +69,19 @@ sudo find data/ -type f -exec chmod 664 {} +
 
 Here group members can create, modify, and delete files. The setgid bit ensures new entries inherit the group ownership.
 
+### Per-subfolder overrides
+
+To grant a different group access to a single subfolder under `data/` (e.g. give `my-team` read-write access to `data/my-team-data/` while the rest of `data/` stays owned by the project group), apply the same recipe scoped to that subfolder:
+
+```bash
+sudo chown -R <owner>:my-team data/my-team-data
+sudo chmod 2775 data/my-team-data
+sudo find data/my-team-data -type d -exec chmod 2775 {} +
+sudo find data/my-team-data -type f -exec chmod 664 {} +
+```
+
+Use `2755`/`644` instead of `2775`/`664` for read-only group access. The setgid bit on the subfolder is what makes new files inherit the override group instead of the parent's group.
+
 ## Downloading Databases
 
 The `download` directory contains scripts for downloading bioinformatics reference databases (NR, Pfam, SwissProt, SMART, ExPASy Enzyme, BRENDA) with retry logic, MD5 verification, and provenance logging. See [download/README.md](download/README.md) for setup and usage.

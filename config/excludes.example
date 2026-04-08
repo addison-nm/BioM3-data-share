@@ -1,0 +1,19 @@
+# biom3sync excludes — patterns relative to the data/ root.
+#
+# Copy this file to config/excludes (which is gitignored) and edit it to
+# exclude paths from push, pull, and diff:
+#
+#     cp config/excludes.example config/excludes
+#
+# Customizations to config/excludes survive `git pull` because the live
+# file is not tracked. To pick up new recommended patterns from upstream,
+# diff this .example file against your local copy and merge by hand.
+#
+# Syntax follows rsync filter rules. One pattern per line. Lines beginning
+# with # and blank lines are ignored.
+#
+# Examples:
+#   nm-team-data/          # skip an entire subdirectory
+#   *.tmp.npy              # skip a file glob anywhere under data/
+#   /scratch/              # anchor to data/ root (leading slash)
+

@@ -93,6 +93,39 @@ Checksums are computed by default. For the largest files (e.g. 37 GB Pfam), this
 
 `manifest.json` and `manifest.txt` are synced to remotes via push/pull, so collaborators can inspect what's available without downloading everything.
 
+## Excludes
+
+`config/excludes` is an optional file that lists paths under `data/` to skip
+during push, pull, and diff. Patterns use rsync filter syntax and are
+interpreted relative to the `data/` root.
+
+The repo ships `config/excludes.example` as a template. Create your live
+file with:
+
+```bash
+cp config/excludes.example config/excludes
+$EDITOR config/excludes
+```
+
+`config/excludes` is gitignored, so your customizations survive `git pull`
+when this project is used as a GitHub template — upstream may update
+`config/excludes.example`, but your live file is never touched. To pick up
+new recommended patterns from upstream, diff the example against your local
+copy and merge by hand.
+
+```text
+# Example config/excludes
+nm-team-data/          # skip an entire subdirectory
+*.tmp.npy              # glob anywhere under data/
+/scratch/              # anchored to data/ root
+```
+
+Run with `-v` to confirm the file is being honored — `biom3sync` prints
+`using excludes: <path>` before each rsync invocation in verbose mode. If
+`config/excludes` is missing but `config/excludes.example` exists, you'll
+get a one-line hint about the copy step. With no excludes file at all, sync
+proceeds with only the built-in excludes (OS junk and `.logs/`).
+
 ## Catalog
 
 `CATALOG.md` is a human-maintained documentation file describing the contents of the data share. Run `biom3sync catalog` to automatically add stub entries for any directories not yet documented:
@@ -123,7 +156,7 @@ The `.logs/` directory is excluded from rsync so it is never overwritten on remo
 
 - **rsync over SSH** with `-azhP`: archive mode, compression, human-readable output, and partial-file resumption (safe for large interrupted transfers).
 - **SSH ControlMaster** (`-fNM -o ControlPersist=4h`): opens a background SSH session that subsequent connections multiplex through. This is what allows 2FA to be entered only once.
-- **Excludes from rsync**: `.DS_Store`, `._*`, `.Spotlight-V100`, `.Trashes`, `*.tmp`, `*.swp`, `.~lock.*`, `.logs/`.
+- **Excludes from rsync**: hardcoded — `.DS_Store`, `._*`, `.Spotlight-V100`, `.Trashes`, `*.tmp`, `*.swp`, `.~lock.*`, `.logs/`. Plus any patterns in `config/excludes` (see [Excludes](#excludes)).
 - ControlMaster sockets are stored in `~/.config/biom3sync/sockets/` (permissions 700, not synced to OneDrive).
 
 ## Adding a new remote
