@@ -43,46 +43,35 @@ chmod -R u+rwX,go-w .
 
 This gives the owner full access and everyone else read/execute on directories and read on files. Scripts like `sync/biom3sync.sh` retain their executable bit.
 
-### Data directory (read-only for group)
+### `data/` — group read-only base
 
-To allow group members to read but not modify anything under `data/`:
-
-```bash
-sudo chown -R <owner>:<group> data/
-sudo chmod 2755 data/
-sudo find data/ -type d -exec chmod 2755 {} +
-sudo find data/ -type f -exec chmod 644 {} +
-```
-
-The setgid bit (`2`) ensures new files and subdirectories inherit the group. Group and others get read-only access.
-
-### Data directory (read-write for group)
-
-To allow group members to both read and write under `data/`:
+The canonical profile for `data/`: the project group (e.g. `biom3-dev-team`) can read everything; only the owner can write. New files added by the owner inherit the project group automatically thanks to the setgid bit.
 
 ```bash
-sudo chown -R <owner>:<group> data/
-sudo chmod 3775 data/
-sudo find data/ -type d -exec chmod 3775 {} +
-sudo find data/ -type f -exec chmod 664 {} +
+sudo chown -R <owner>:<project-group> data
+sudo chmod 2755 data
+sudo find data -type d -exec chmod 2755 {} +
+sudo find data -type f -exec chmod 644 {} +
 ```
 
-Here group members can create and modify files. The setgid bit (`2`) ensures new entries inherit the group ownership; the sticky bit (`1`) ensures only a file's owner can delete or rename it, so users can't `rm` each other's work even though group write is enabled.
+The setgid bit (`2`) on directories ensures new entries inherit the project group instead of the creator's primary group. Group and others get read + traverse, no write.
 
-### Per-subfolder overrides
+A read-write base variant (Profile B) is documented in [docs/permissions.md](docs/permissions.md) for cases where group members need to write directly to `data/`. It requires a default ACL to survive umask masking — see the runbook for the full recipe.
 
-To grant a different group access to a single subfolder under `data/` (e.g. give `my-team` read-write access to `data/my-team-data/` while the rest of `data/` stays owned by the project group), apply the same recipe scoped to that subfolder:
+### Per-subfolder lockdown override
+
+To carve out a subfolder under `data/` that only one specific group can access (read or write), apply this recipe *after* the base profile. Example: give `<team>` exclusive access to `data/<team>-data/` while the rest of `data/` stays project-group readable.
 
 ```bash
-sudo chown -R <owner>:my-team data/my-team-data
-sudo chmod 3775 data/my-team-data
-sudo find data/my-team-data -type d -exec chmod 3775 {} +
-sudo find data/my-team-data -type f -exec chmod 664 {} +
+sudo chown -R :<team> data/<team>-data
+sudo chmod 3770 data/<team>-data
+sudo find data/<team>-data -mindepth 1 -type d -exec chmod 2770 {} +
+sudo find data/<team>-data -type f -exec chmod 660 {} +
+sudo setfacl -k data/<team>-data
+sudo setfacl -d -m u::rwx,g::rwx,o::--- data/<team>-data
 ```
 
-Use `2755`/`644` instead of `3775`/`664` for read-only group access (no sticky bit needed when the group can't write). The setgid bit on the subfolder is what makes new files inherit the override group instead of the parent's; the sticky bit prevents team members from deleting each other's files.
-
-The recipe above is the **collaborative** variant — any team member can edit any file. For a **strict** variant where each member can only modify files they own (and a default ACL keeps new files at `644` regardless of the contributor's umask), see [docs/permissions.md](docs/permissions.md) for both variants and the full reapply procedure with verification.
+The `chown -R :<team>` only changes the group, preserving whoever created each file. Mode `3770` on the top of the override sets setgid (`2`) so new entries inherit `<team>`, sticky (`1`) so only a file's owner can delete or rename top-level entries, and `770` so non-`<team>` users have no access at all — they can't even `ls` the directory. Nested directories get `2770` (setgid only; sticky doesn't propagate via `mkdir`). The default ACL forces new files to land at `660` and new directories at `2770` regardless of each contributor's umask, which is otherwise the silent failure mode of group-writable directories. See [docs/permissions.md](docs/permissions.md) for the full reapply procedure with verification, limitations, and a read-write base variant.
 
 ## Downloading Databases
 
