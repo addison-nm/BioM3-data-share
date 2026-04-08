@@ -62,12 +62,12 @@ To allow group members to both read and write under `data/`:
 
 ```bash
 sudo chown -R <owner>:<group> data/
-sudo chmod 2775 data/
-sudo find data/ -type d -exec chmod 2775 {} +
+sudo chmod 3775 data/
+sudo find data/ -type d -exec chmod 3775 {} +
 sudo find data/ -type f -exec chmod 664 {} +
 ```
 
-Here group members can create, modify, and delete files. The setgid bit ensures new entries inherit the group ownership.
+Here group members can create and modify files. The setgid bit (`2`) ensures new entries inherit the group ownership; the sticky bit (`1`) ensures only a file's owner can delete or rename it, so users can't `rm` each other's work even though group write is enabled.
 
 ### Per-subfolder overrides
 
@@ -75,12 +75,14 @@ To grant a different group access to a single subfolder under `data/` (e.g. give
 
 ```bash
 sudo chown -R <owner>:my-team data/my-team-data
-sudo chmod 2775 data/my-team-data
-sudo find data/my-team-data -type d -exec chmod 2775 {} +
+sudo chmod 3775 data/my-team-data
+sudo find data/my-team-data -type d -exec chmod 3775 {} +
 sudo find data/my-team-data -type f -exec chmod 664 {} +
 ```
 
-Use `2755`/`644` instead of `2775`/`664` for read-only group access. The setgid bit on the subfolder is what makes new files inherit the override group instead of the parent's group.
+Use `2755`/`644` instead of `3775`/`664` for read-only group access (no sticky bit needed when the group can't write). The setgid bit on the subfolder is what makes new files inherit the override group instead of the parent's; the sticky bit prevents team members from deleting each other's files.
+
+The recipe above is the **collaborative** variant — any team member can edit any file. For a **strict** variant where each member can only modify files they own (and a default ACL keeps new files at `644` regardless of the contributor's umask), see [docs/permissions.md](docs/permissions.md) for both variants and the full reapply procedure with verification.
 
 ## Downloading Databases
 
