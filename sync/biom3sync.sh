@@ -472,8 +472,38 @@ _manifest_skip_name() {
     return 1
 }
 
+# Format a byte count as a deterministic human-readable string. Pure integer
+# math so output is byte-identical on every host (no BSD/GNU du drift, no
+# locale-sensitive printf rounding).
+#
+# Rule: pick the smallest unit whose raw value is < 1024. Within a unit,
+# values < 10 print as "X.Y" (one decimal, round-half-up); values >= 10
+# print as an integer (round-half-up). Empty files print as "0" (no unit).
+format_size_human() {
+    local bytes=$1
+    if [[ $bytes -eq 0 ]]; then echo "0"; return 0; fi
+    if [[ $bytes -lt 1024 ]]; then echo "$bytes"; return 0; fi
+
+    local unit scale
+    if   [[ $bytes -lt 1048576       ]]; then unit="K"; scale=1024
+    elif [[ $bytes -lt 1073741824    ]]; then unit="M"; scale=1048576
+    elif [[ $bytes -lt 1099511627776 ]]; then unit="G"; scale=1073741824
+    else                                      unit="T"; scale=1099511627776
+    fi
+
+    # Round-half-up: add half the divisor before integer division.
+    local scaled=$(( (bytes * 10 + scale / 2) / scale ))
+    if [[ $scaled -ge 100 ]]; then
+        echo "$(( (bytes + scale / 2) / scale ))${unit}"
+    else
+        echo "$(( scaled / 10 )).$(( scaled % 10 ))${unit}"
+    fi
+}
+
 # Recursive tree walker.
-# Globals written: _JSON_ENTRIES (array), _TXT_LINES (array)
+# Globals written: _JSON_ENTRIES (array), _TXT_LINES (array), _SUBTREE_BYTES
+# (scalar — byte total of the most recent call; read immediately after each
+# recursive call, before the next one overwrites it).
 # DO_CHECKSUM must be set before calling.
 _manifest_walk() {
     local dir="$1"
@@ -481,18 +511,25 @@ _manifest_walk() {
     local prefix="$3"    # tree-drawing prefix for txt
     local rel_base="$4"  # relative path from LOCAL_ROOT
 
-    [[ $depth -le 0 ]] && return
+    # Traversal always continues so parent directories get accurate byte
+    # totals even when the display depth is exhausted. `emit` gates whether
+    # entries are appended at this level.
+    local emit=true
+    [[ $depth -le 0 ]] && emit=false
 
-    # Collect children, sorted
+    # LC_ALL=C forces deterministic byte-ordering so the same tree sorts
+    # identically on macOS (BSD, collates dotfiles first) and Linux (GNU,
+    # often treats leading dots as insignificant).
     local children=()
     while IFS= read -r child; do
         [[ -z "$child" ]] && continue
         _manifest_skip_name "$(basename "$child")" && continue
         children+=("$child")
-    done < <(find "$dir" -maxdepth 1 -mindepth 1 | sort)
+    done < <(LC_ALL=C find "$dir" -maxdepth 1 -mindepth 1 | LC_ALL=C sort)
 
     local total=${#children[@]}
     local idx=0
+    local subtree_bytes=0
 
     for child in "${children[@]}"; do
         idx=$(( idx + 1 ))
@@ -510,33 +547,56 @@ _manifest_walk() {
         fi
 
         if [[ -d "$child" ]]; then
-            local size_human
-            size_human=$(du -sh "$child" 2>/dev/null | awk '{print $1}')
-            _TXT_LINES+=("${prefix}${connector}${name}/  [${size_human}]")
-            _JSON_ENTRIES+=("{\"path\": \"${rel_path}\", \"type\": \"dir\", \"size_human\": \"${size_human}\"}")
-            _manifest_walk "$child" $(( depth - 1 )) "$child_prefix" "$rel_path"
-        else
-            local size_bytes size_human
-            size_bytes=$(file_size_bytes "$child")
-            size_human=$(du -sh "$child" 2>/dev/null | awk '{print $1}')
-
-            local md5_display="" md5_val=""
-            if $DO_CHECKSUM; then
-                echo -n "  checksumming ${rel_path} ... " >&2
-                md5_val=$(md5_file "$child")
-                echo "done" >&2
-                md5_display="  md5:${md5_val}"
+            # Reserve the dir's slot so its line lands BEFORE its children
+            # in the tree output, then backfill once the subtree byte total
+            # is known from the recursive call.
+            local dir_txt_idx=0 dir_json_idx=0
+            if $emit; then
+                dir_txt_idx=${#_TXT_LINES[@]}
+                dir_json_idx=${#_JSON_ENTRIES[@]}
+                _TXT_LINES+=("")
+                _JSON_ENTRIES+=("")
             fi
 
-            _TXT_LINES+=("${prefix}${connector}${name}  [${size_human}]${md5_display}")
+            _manifest_walk "$child" $(( depth - 1 )) "$child_prefix" "$rel_path"
+            local child_bytes=$_SUBTREE_BYTES
+            subtree_bytes=$(( subtree_bytes + child_bytes ))
 
-            local json_entry
-            json_entry="{\"path\": \"${rel_path}\", \"type\": \"file\", \"size_bytes\": ${size_bytes}, \"size_human\": \"${size_human}\""
-            $DO_CHECKSUM && json_entry+=", \"md5\": \"${md5_val}\""
-            json_entry+="}"
-            _JSON_ENTRIES+=("$json_entry")
+            if $emit; then
+                local size_human
+                size_human=$(format_size_human "$child_bytes")
+                _TXT_LINES[$dir_txt_idx]="${prefix}${connector}${name}/  [${size_human}]"
+                _JSON_ENTRIES[$dir_json_idx]="{\"path\": \"${rel_path}\", \"type\": \"dir\", \"size_human\": \"${size_human}\"}"
+            fi
+        else
+            local size_bytes
+            size_bytes=$(file_size_bytes "$child")
+            subtree_bytes=$(( subtree_bytes + size_bytes ))
+
+            if $emit; then
+                local size_human
+                size_human=$(format_size_human "$size_bytes")
+
+                local md5_display="" md5_val=""
+                if $DO_CHECKSUM; then
+                    echo -n "  checksumming ${rel_path} ... " >&2
+                    md5_val=$(md5_file "$child")
+                    echo "done" >&2
+                    md5_display="  md5:${md5_val}"
+                fi
+
+                _TXT_LINES+=("${prefix}${connector}${name}  [${size_human}]${md5_display}")
+
+                local json_entry
+                json_entry="{\"path\": \"${rel_path}\", \"type\": \"file\", \"size_bytes\": ${size_bytes}, \"size_human\": \"${size_human}\""
+                $DO_CHECKSUM && json_entry+=", \"md5\": \"${md5_val}\""
+                json_entry+="}"
+                _JSON_ENTRIES+=("$json_entry")
+            fi
         fi
     done
+
+    _SUBTREE_BYTES=$subtree_bytes
 }
 
 cmd_manifest() {
