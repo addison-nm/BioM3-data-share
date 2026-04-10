@@ -167,10 +167,14 @@ validate_remote() {
 # from a fresh template instantiation know how to enable custom excludes).
 announce_excludes() {
     if [[ -f "$EXCLUDES_FILE" ]]; then
-        $VERBOSE && echo "  using excludes: $EXCLUDES_FILE"
+        if $VERBOSE; then
+            echo "  using excludes: $EXCLUDES_FILE"
+        fi
     elif [[ -f "$EXCLUDES_EXAMPLE" ]]; then
         echo "  hint: cp config/excludes.example config/excludes  to enable custom excludes"
     fi
+    # Explicit return 0 so set -e doesn't kill the script if the last echo is skipped.
+    return 0
 }
 
 # Append one TSV record to .logs/sync.log
@@ -326,7 +330,9 @@ do_sync() {
         echo "← pull  $remote  ${subpath:-.}/"
     fi
 
-    $DRY_RUN && echo "  [dry run — no files will be transferred]"
+    if $DRY_RUN; then
+        echo "  [dry run — no files will be transferred]"
+    fi
     announce_excludes
 
     local ssh_e
