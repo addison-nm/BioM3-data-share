@@ -421,74 +421,132 @@ download_expasy() {
 
 # ===========================================================================
 # 7. BRENDA (Braunschweig Enzyme Database)
-#    Source  : https://www.brenda-enzymes.org/
-#    Method  : BRENDA requires a free registered account + SOAP/REST API key.
-#              Place your email and password in brenda_key.txt:
-#                  email=YOUR_EMAIL
-#                  password=YOUR_PASSWORD
-#              The script downloads the full text file via the SOAP endpoint.
-#              Without credentials, instructions to register are printed.
+#    Source  : https://www.brenda-enzymes.org/download.php
+#    Method  : The BRENDA flat-file is gated behind a license-acceptance
+#              checkbox (not user credentials). We establish a session via
+#              GET /download.php, then POST with dlfile=<element-id> and
+#              accept-license=1. The server returns the current version
+#              (e.g. brenda_2026_1.txt.tar.gz) via Content-Disposition, so
+#              the version is not hardcoded.
+#    Files   : brenda_YYYY_N.txt.tar.gz  (textfile flat-file, ~72 MB)
+#              brenda_README_YYYY_N.txt  (format README)
+#    License : Running this function downloads BRENDA's textfile, which is
+#              free for non-commercial use under the BRENDA license. By
+#              running it, the invoker accepts the license terms at
+#              https://www.brenda-enzymes.org/copy.php
+#    Notes   : To also fetch the JSON variant (~79 MB), add a dl-json POST
+#              mirroring the textfile block below.
 # ===========================================================================
 download_brenda() {
     local db_dir="$BASE_DIR/brenda"
     mkdir -p "$db_dir"
-    info "--- BRENDA ---"
+    info "--- BRENDA (flat-file) ---"
 
-    local cred_file="$CRED_DIR/brenda_key.txt"
+    local url="https://www.brenda-enzymes.org/download.php"
+    local cookie_jar="$db_dir/.brenda_session.cookies"
+    rm -f "$cookie_jar"
 
-    if [[ ! -f "$cred_file" ]] || ! grep -q '^email=' "$cred_file" || ! grep -q '^password=' "$cred_file"; then
-        warn "BRENDA: $cred_file not found."
-        warn "BRENDA: Register free at https://www.brenda-enzymes.org/register.php"
-        warn "BRENDA: Then create download/credentials/brenda_key.txt with:"
-        warn "BRENDA:   email=YOUR_EMAIL"
-        warn "BRENDA:   password=YOUR_SHA256_PASSWORD"
-        warn "BRENDA: Re-run with -d brenda to download."
-        return 0
+    info "BRENDA: license acceptance is implicit when running this function — see https://www.brenda-enzymes.org/copy.php"
+    info "BRENDA: establishing session at $url"
+    if ! curl -sS -c "$cookie_jar" "$url" -o /dev/null; then
+        die "BRENDA: failed to establish session with $url"
     fi
 
-    local email password_sha256
-    email=$(grep '^email='    "$cred_file" | cut -d= -f2)
-    password_sha256=$(grep '^password=' "$cred_file" | cut -d= -f2)
+    _brenda_download_artifact() {
+        local element_id="$1"   # e.g. dl-textfile, dl-readme
+        local tmp_out="$2"      # temporary output path
+        local hdr_file="$3"     # headers dump path
+        local max_retries=3
+        local attempt=0
 
-    local out_file="$db_dir/brenda_download_${DATE_TAG}.txt"
+        while (( attempt < max_retries )); do
+            attempt=$(( attempt + 1 ))
+            info "BRENDA: POST dlfile=$element_id (attempt $attempt/$max_retries)" >&2
+            if curl -sS \
+                -b "$cookie_jar" -c "$cookie_jar" \
+                -D "$hdr_file" \
+                -o "$tmp_out" \
+                --connect-timeout 30 \
+                --max-time 0 \
+                -X POST "$url" \
+                --data-urlencode "dlfile=$element_id" \
+                --data-urlencode "accept-license=1"; then
+                break
+            else
+                warn "BRENDA: POST failed on attempt $attempt" >&2
+                [[ $attempt -lt $max_retries ]] && sleep 30
+            fi
+        done
 
-    info "BRENDA: downloading via SOAP API as $email"
+        if [[ ! -s "$tmp_out" ]]; then
+            die "BRENDA: empty response for $element_id"
+        fi
 
-    # BRENDA SOAP endpoint — downloads full text database
-    python3 - <<PYEOF 2>>"$LOG_FILE"
-import hashlib, sys
+        # Pull the server-assigned filename out of Content-Disposition
+        local server_name
+        server_name=$(grep -i '^content-disposition:' "$hdr_file" \
+            | sed -n 's/.*filename="\([^"]*\)".*/\1/p' \
+            | tr -d '\r')
+        if [[ -z "$server_name" ]]; then
+            die "BRENDA: no Content-Disposition filename for $element_id — license may not have been accepted"
+        fi
+        echo "$server_name"
+    }
 
-try:
-    from zeep import Client
-except ImportError:
-    print("zeep not installed; falling back to urllib", file=sys.stderr)
-    # Fallback: direct HTTPS download of the flat file (requires login session)
-    import urllib.request, urllib.parse
-    login_url  = "https://www.brenda-enzymes.org/soap/brenda_server.php"
-    print(f"SOAP endpoint: {login_url}", file=sys.stderr)
-    sys.exit(0)
+    # --- textfile flat-file (dl-textfile) ---
+    local textfile_tmp="$db_dir/.brenda_textfile.download"
+    local textfile_hdr="$db_dir/.brenda_textfile.headers"
+    local textfile_name
+    textfile_name=$(_brenda_download_artifact "dl-textfile" "$textfile_tmp" "$textfile_hdr")
 
-wsdl = "https://www.brenda-enzymes.org/soap/brenda_server.php?wsdl"
-client = Client(wsdl)
+    # Sanity check: must be gzip (magic bytes 1f 8b)
+    local magic
+    magic=$(head -c 2 "$textfile_tmp" | od -An -tx1 | tr -d ' \n')
+    if [[ "$magic" != "1f8b" ]]; then
+        die "BRENDA: downloaded textfile is not gzip (got magic '$magic') — license acceptance likely failed"
+    fi
 
-email          = "${email}"
-password_sha   = "${password_sha256}"
+    mv "$textfile_tmp" "$db_dir/$textfile_name"
+    info "BRENDA: saved $textfile_name"
 
-parameters = f"{email},{password_sha},ecNumber*1.1.1.1#organism*Homo sapiens"
-result = client.service.getOrganism(parameters)
-print(result)
-PYEOF
-
+    # MD5 + provenance for the textfile
+    local textfile_md5
+    if command -v md5sum &>/dev/null; then
+        textfile_md5=$(md5sum "$db_dir/$textfile_name" | awk '{print $1}')
+    else
+        textfile_md5=$(md5 -q "$db_dir/$textfile_name")
+    fi
+    info "MD5 of $db_dir/$textfile_name: $textfile_md5"
     cat >> "$BASE_DIR/provenance.tsv" <<EOF
-$(date -u +"%Y-%m-%dT%H:%M:%SZ")	brenda_download_${DATE_TAG}.txt	https://www.brenda-enzymes.org/soap/brenda_server.php	credentials-required
+$(date -u +"%Y-%m-%dT%H:%M:%SZ")	$textfile_name	$url (dl-textfile, license accepted)	$textfile_md5
 EOF
 
-    # Also download the flat-file snapshot if a direct URL becomes available
-    # BRENDA also offers annual flat-file dumps via their website (login required)
-    warn "BRENDA: For the full flat-file, log in at https://www.brenda-enzymes.org/download_brenda_without_license.php"
-    warn "BRENDA: and download 'brenda_download.txt.gz'. Place in $db_dir/ and re-run verify_checksums.sh"
+    # Extract the textfile archive in place
+    info "BRENDA: extracting $textfile_name"
+    tar -zxf "$db_dir/$textfile_name" -C "$db_dir"
 
-    success "BRENDA: step complete — $db_dir"
+    # --- format README (dl-readme) ---
+    local readme_tmp="$db_dir/.brenda_readme.download"
+    local readme_hdr="$db_dir/.brenda_readme.headers"
+    local readme_name
+    readme_name=$(_brenda_download_artifact "dl-readme" "$readme_tmp" "$readme_hdr")
+    mv "$readme_tmp" "$db_dir/$readme_name"
+    info "BRENDA: saved $readme_name"
+
+    local readme_md5
+    if command -v md5sum &>/dev/null; then
+        readme_md5=$(md5sum "$db_dir/$readme_name" | awk '{print $1}')
+    else
+        readme_md5=$(md5 -q "$db_dir/$readme_name")
+    fi
+    cat >> "$BASE_DIR/provenance.tsv" <<EOF
+$(date -u +"%Y-%m-%dT%H:%M:%SZ")	$readme_name	$url (dl-readme, license accepted)	$readme_md5
+EOF
+
+    # Clean up session + header scratch files
+    rm -f "$cookie_jar" "$textfile_hdr" "$readme_hdr"
+
+    success "BRENDA: flat-file download complete — $db_dir"
 }
 
 # ===========================================================================

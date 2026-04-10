@@ -19,7 +19,7 @@ This pipeline downloads eight bioinformatics databases for local use in sequence
 | TrEMBL | Unreviewed protein sequences | UniProt FTP | No | ~120 GB |
 | SMART | Domain descriptions | EMBL | No | <1 MB |
 | ExPASy Enzyme | Enzyme nomenclature | ExPASy FTP | No | ~10 MB |
-| BRENDA | Enzyme function & kinetics | BRENDA SOAP | Yes (free account) | ~2 GB |
+| BRENDA | Enzyme function & kinetics (textfile flat-file) | BRENDA website | No (license acceptance) | ~72 MB compressed |
 | NCBI Taxonomy | Taxonomic classification + accession mapping | NCBI FTP | No | ~11 GB |
 
 ---
@@ -34,8 +34,6 @@ This pipeline downloads eight bioinformatics databases for local use in sequence
 | wget | 1.20+ | `apt install wget` / `brew install wget` |
 | md5sum or md5 | any | Pre-installed on Linux / macOS respectively |
 | makeblastdb | BLAST+ 2.12+ | Only required for `swissprot_blast`; `apt install ncbi-blast+` or `conda install -c bioconda blast` |
-| python3 | 3.8+ | Only required for BRENDA SOAP download |
-| zeep (Python) | 4.x | `pip install zeep` — only for BRENDA SOAP |
 
 ### Disk space
 
@@ -49,19 +47,10 @@ Reserve at least **580 GB** of free space before running the full suite. NR alon
 # 1. Clone or copy this directory to your machine
 cd /path/to/BioM3-data-share/download
 
-# 2. (If downloading BRENDA) create credentials file
-#    BRENDA expects your password as a SHA-256 hex digest
-python3 -c "import hashlib; print(hashlib.sha256(b'YOUR_BRENDA_PASSWORD').hexdigest())"
-cat > download/credentials/brenda_key.txt <<EOF
-email=YOUR_BRENDA_EMAIL
-password=<SHA256_OUTPUT_FROM_ABOVE>
-EOF
-chmod 600 download/credentials/brenda_key.txt
-
-# 3. Run the downloader
+# 2. Run the downloader
 bash download_databases.sh -o /mnt/databases
 
-# 4. Verify checksums after download completes
+# 3. Verify checksums after download completes
 bash verify_checksums.sh /mnt/databases
 ```
 
@@ -213,18 +202,15 @@ Files downloaded:
 
 ### 7. BRENDA — Braunschweig Enzyme Database
 
-**URL:** `https://www.brenda-enzymes.org/`
+**URL:** `https://www.brenda-enzymes.org/download.php`
 
-BRENDA is a comprehensive enzyme information system with kinetic parameters, organism data, substrates, and literature. Full database access requires a **free registered account**.
+BRENDA publishes a textfile flat-file of the full enzyme database, gated behind a license-acceptance checkbox (no user account required). The downloader establishes a session against `https://www.brenda-enzymes.org/download.php`, then POSTs `dlfile=dl-textfile&accept-license=1` and follows the `Content-Disposition` filename to save `brenda_YYYY_N.txt.tar.gz` (currently ~72 MB compressed). The textfile archive is extracted in place. Running this function implicitly accepts the BRENDA license terms at https://www.brenda-enzymes.org/copy.php.
 
-**Setup:**
-1. Register at https://www.brenda-enzymes.org/register.php (free).
-2. Compute the SHA-256 hash of your password (see Quick Start).
-3. Add credentials to `download/credentials/brenda_key.txt`.
-4. The script uses the BRENDA SOAP API via the `zeep` Python library.
-5. The full flat-file dump (`brenda_download.txt.gz`) can also be downloaded manually from https://www.brenda-enzymes.org/download_brenda_without_license.php after login.
+The script also downloads the companion format README (`brenda_README_YYYY_N.txt`) via `dlfile=dl-readme` so the flat-file layout is documented alongside the data.
 
-**BRENDA license:** Free for academic use. Commercial use requires a separate licence. See https://www.brenda-enzymes.org/download.php.
+To additionally fetch the JSON variant (~79 MB, schema at `/schemas/2.0.0/brenda.schema.json`), mirror the textfile block with `dlfile=dl-json`.
+
+**BRENDA license:** Free for academic use. Commercial use requires a separate licence. See https://www.brenda-enzymes.org/copy.php.
 
 **Citation:** Jeske et al. *Nucleic Acids Res.* 2019, BRENDA in 2019: a European ELIXIR core data resource.
 
@@ -309,7 +295,9 @@ databases/
 │   ├── enzyme.rdf
 │   └── enzuser.txt
 ├── brenda/
-│   └── brenda_download_YYYYMMDD.txt
+│   ├── brenda_YYYY_N.txt.tar.gz
+│   ├── brenda_YYYY_N.txt            — extracted from the tarball
+│   └── brenda_README_YYYY_N.txt
 └── ncbi_taxonomy/
     ├── new_taxdump.tar.gz
     ├── prot.accession2taxid.gz
@@ -339,7 +327,7 @@ download_timestamp        filename                  source_url                  
 - [ ] Release version recorded for Pfam (`relnotes.txt`), SwissProt (`reldate.txt`), and TrEMBL (`reldate.txt`)
 - [ ] Download date recorded (automatic in `provenance.tsv`)
 - [ ] `verify_checksums.sh` run and passed after download
-- [ ] SMART and BRENDA credential files **not** committed to version control (add to `.gitignore`)
+- [ ] SMART credential files **not** committed to version control (add to `.gitignore`)
 - [ ] Compute environment (OS, wget version) documented in your lab notebook
 
 ---
@@ -351,7 +339,7 @@ download_timestamp        filename                  source_url                  
 | `wget: command not found` | wget not installed | `apt install wget` or `brew install wget` |
 | NR download stalls at volume 00 | FTP firewall/proxy | Try `-j 1`; check your institution's FTP access |
 | SMART login fails | Wrong credentials or site change | Check https://smart.embl.de/ manually |
-| BRENDA SOAP error | `zeep` not installed or API changed | `pip install zeep`; check BRENDA SOAP WSDL at their website |
+| BRENDA download is HTML, not gzip | License-acceptance POST failed (session cookie dropped or form field changed) | Delete `databases/brenda/.brenda_session.cookies` and re-run `-d brenda`; verify the form element IDs at https://www.brenda-enzymes.org/download.php |
 | MD5 mismatch | Interrupted download | Delete the partial file, re-run; `wget --continue` will resume |
 | Disk full mid-download | Insufficient space | Free space, then re-run — wget `--continue` resumes incomplete files |
 
@@ -360,4 +348,3 @@ download_timestamp        filename                  source_url                  
 ## Security Notes
 
 - Credential files live in `download/credentials/`, which is gitignored (only the `.gitkeep` and `README.md` are tracked). Set file permissions to `600`.
-- BRENDA stores the password as a SHA-256 hex digest over the SOAP API; do not store your plain-text password anywhere in this repository.
