@@ -39,8 +39,9 @@ log "-----------------------------------------------------------------------"
 
 PASS=0; FAIL=0; SKIP=0
 
-# Skip header line
-tail -n +2 "$PROVENANCE" | while IFS=$'\t' read -r dl_ts filename source_url recorded_md5; do
+# Skip header line. Loop reads from a process substitution (not a pipe) so
+# PASS/FAIL/SKIP counter updates persist in this shell instead of a subshell.
+while IFS=$'\t' read -r dl_ts filename source_url recorded_md5; do
     # Try to locate the file
     found=$(find "$BASE_DIR" -name "$filename" 2>/dev/null | head -1)
 
@@ -67,7 +68,7 @@ tail -n +2 "$PROVENANCE" | while IFS=$'\t' read -r dl_ts filename source_url rec
         log "FAIL  $filename  expected=$recorded_md5  actual=$actual_md5"
         (( FAIL++ )) || true
     fi
-done
+done < <(tail -n +2 "$PROVENANCE")
 
 log "-----------------------------------------------------------------------"
 log "Results: PASS=$PASS  FAIL=$FAIL  SKIP=$SKIP"
