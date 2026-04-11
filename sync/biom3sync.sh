@@ -12,7 +12,11 @@
 #   pull       [REMOTE|all] [SUBPATH]   pull data from remote(s)
 #   manifest   [-d DEPTH] [--no-checksum]   generate manifest.json + manifest.txt
 #   catalog                             add stub entries to CATALOG.md for new directories
-#   diff       REMOTE [SUBPATH]         compare local and remote data
+#   diff       [--content-only] REMOTE [SUBPATH]
+#                                       compare local and remote data
+#                                       --content-only ignores perms/owner/group
+#                                       and directory mtimes, showing only real
+#                                       content drift (new/missing/modified files)
 #
 # OPTIONS (place before command)
 #   -n, --dry-run    show what would transfer without transferring
@@ -34,6 +38,7 @@
 #   biom3sync disconnect aurora
 #   biom3sync diff spark                       # compare local vs spark
 #   biom3sync diff aurora datasets/CM          # compare a subdirectory
+#   biom3sync diff --content-only spark        # skip perms/owner/group noise
 #   biom3sync manifest                        # generate manifest with checksums
 #   biom3sync manifest -d 2 --no-checksum     # fast tree-only manifest, depth 2
 #   biom3sync catalog                         # add stubs for any undocumented directories
@@ -388,9 +393,19 @@ cmd_pull() {
 # ── diff ──────────────────────────────────────────────────────────────────────
 
 cmd_diff() {
+    local content_only=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --content-only) content_only=true; shift ;;
+            --)             shift; break ;;
+            -*)             echo "Unknown diff option: $1" >&2; exit 1 ;;
+            *)              break ;;
+        esac
+    done
+
     local remote="${1:-}"
     local subpath="${2:-}"
-    [[ -z "$remote" ]] && { echo "Usage: $(basename "$0") diff REMOTE [SUBPATH]"; exit 1; }
+    [[ -z "$remote" ]] && { echo "Usage: $(basename "$0") diff [--content-only] REMOTE [SUBPATH]"; exit 1; }
 
     validate_remote "$remote"
     require_connection "$remote"
@@ -419,9 +434,19 @@ cmd_diff() {
     ssh_e=$(ssh_e_flag "$remote")
 
     local rsync_flags=(-azn --itemize-changes)
+    if $content_only; then
+        # Tell rsync not to compare these so metadata-only drift doesn't
+        # drown out real content changes in the itemize output. File mtimes
+        # (and therefore real content changes) are still compared.
+        rsync_flags+=(--no-perms --no-group --no-owner --omit-dir-times)
+    fi
     $VERBOSE && rsync_flags+=(-v)
 
-    echo "Comparing local ↔ ${remote}  ${subpath:-.}/"
+    local header="Comparing local ↔ ${remote}  ${subpath:-.}/"
+    if $content_only; then
+        header+="  [content-only]"
+    fi
+    echo "$header"
     announce_excludes
     echo ""
 
