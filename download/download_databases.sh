@@ -93,6 +93,38 @@ error()   { log ERROR   "$@" >&2; }
 die() { error "$@"; exit 1; }
 
 # ---------------------------------------------------------------------------
+# MD5 and provenance helpers
+# ---------------------------------------------------------------------------
+_md5() {
+    local path="$1"
+    if command -v md5sum &>/dev/null; then
+        md5sum "$path" | awk '{print $1}'
+    elif command -v md5 &>/dev/null; then
+        md5 -q "$path"
+    else
+        echo "md5-tool-not-found"
+    fi
+}
+
+# Append a provenance row only if the most recent row for this basename
+# carries a different md5. Keeps provenance.tsv an append-only history
+# while eliminating no-op duplicates when downloads are skipped.
+_record_provenance_if_new() {
+    local dest="$1" url="$2" md5="$3"
+    local prov="$BASE_DIR/provenance.tsv"
+    local name; name=$(basename "$dest")
+    local last_md5=""
+    if [[ -f "$prov" ]]; then
+        last_md5=$(awk -F'\t' -v n="$name" '$2==n {m=$4} END{print m}' "$prov")
+    fi
+    if [[ "$last_md5" == "$md5" ]]; then
+        return 0
+    fi
+    printf '%s\t%s\t%s\t%s\n' \
+        "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$name" "$url" "$md5" >> "$prov"
+}
+
+# ---------------------------------------------------------------------------
 # Download helper with retry and checksum recording
 # ---------------------------------------------------------------------------
 # download_file <url> <dest_path> [expected_md5]
@@ -104,6 +136,35 @@ download_file() {
     local attempt=0
 
     mkdir -p "$(dirname "$dest")"
+
+    # Idempotency gate: skip the retry loop entirely when the target is
+    # already present and intact. Curl's resume (-C -) on a complete file
+    # returns HTTP 416, which --fail treats as an error — re-running would
+    # burn 3×30s of retry/sleep for nothing.
+    if [[ -s "$dest" && "${FORCE:-0}" != "1" ]]; then
+        if [[ -n "$expected_md5" ]]; then
+            local have; have=$(_md5 "$dest")
+            if [[ "$have" == "$expected_md5" ]]; then
+                info "skip: $dest present, md5 verified"
+                _record_provenance_if_new "$dest" "$url" "$have"
+                return 0
+            fi
+            warn "re-download: md5 mismatch (have $have, want $expected_md5)"
+            rm -f "$dest"
+        else
+            local remote_size local_size
+            remote_size=$(curl -sIL "$url" 2>/dev/null \
+                | awk 'BEGIN{IGNORECASE=1} /^content-length:/ {s=$2} END{print s}' \
+                | tr -d '\r' || true)
+            local_size=$(stat -c %s "$dest" 2>/dev/null \
+                || stat -f %z "$dest" 2>/dev/null || echo "")
+            if [[ -n "$remote_size" && "$local_size" == "$remote_size" ]]; then
+                info "skip: $dest present (size matches remote)"
+                _record_provenance_if_new "$dest" "$url" "$(_md5 "$dest")"
+                return 0
+            fi
+        fi
+    fi
 
     while (( attempt < max_retries )); do
         attempt=$(( attempt + 1 ))
@@ -129,16 +190,7 @@ download_file() {
         die "File is empty or missing after $max_retries attempts: $dest"
     fi
 
-    # Record actual MD5
-    local actual_md5
-    if command -v md5sum &>/dev/null; then
-        actual_md5=$(md5sum "$dest" | awk '{print $1}')
-    elif command -v md5 &>/dev/null; then
-        actual_md5=$(md5 -q "$dest")
-    else
-        actual_md5="md5-tool-not-found"
-    fi
-
+    local actual_md5; actual_md5=$(_md5 "$dest")
     info "MD5 of $dest: $actual_md5"
 
     if [[ -n "$expected_md5" ]]; then
@@ -149,10 +201,7 @@ download_file() {
         fi
     fi
 
-    # Append provenance record
-    cat >> "$BASE_DIR/provenance.tsv" <<EOF
-$(date -u +"%Y-%m-%dT%H:%M:%SZ")	$(basename "$dest")	$url	$actual_md5
-EOF
+    _record_provenance_if_new "$dest" "$url" "$actual_md5"
 }
 
 # ---------------------------------------------------------------------------
@@ -223,25 +272,16 @@ download_nr_blast() {
         count=$(( count + 1 ))
         info "NR BLAST: volume $count/$total — $fname"
 
-        download_file "$base_url/$fname" "$db_dir/$fname"
-
-        # Verify against MD5 sidecar if available
+        # Fetch the md5 sidecar first so download_file can use it for both the
+        # pre-download skip gate and post-download integrity check in a single
+        # md5 computation.
         local md5_url="$base_url/${fname}.md5"
+        local expected_md5=""
         if curl --head --silent --fail --output /dev/null "$md5_url" 2>/dev/null; then
-            local expected_md5
             expected_md5=$(curl -s "$md5_url" | awk '{print $1}')
-            local actual_md5
-            if command -v md5sum &>/dev/null; then
-                actual_md5=$(md5sum "$db_dir/$fname" | awk '{print $1}')
-            else
-                actual_md5=$(md5 -q "$db_dir/$fname")
-            fi
-            if [[ "$actual_md5" == "$expected_md5" ]]; then
-                success "MD5 verified: $fname"
-            else
-                die "MD5 MISMATCH for $fname — expected $expected_md5, got $actual_md5"
-            fi
         fi
+
+        download_file "$base_url/$fname" "$db_dir/$fname" "$expected_md5"
 
         # Extract volume
         info "NR BLAST: extracting $fname"
@@ -510,12 +550,7 @@ download_brenda() {
     info "BRENDA: saved $textfile_name"
 
     # MD5 + provenance for the textfile
-    local textfile_md5
-    if command -v md5sum &>/dev/null; then
-        textfile_md5=$(md5sum "$db_dir/$textfile_name" | awk '{print $1}')
-    else
-        textfile_md5=$(md5 -q "$db_dir/$textfile_name")
-    fi
+    local textfile_md5; textfile_md5=$(_md5 "$db_dir/$textfile_name")
     info "MD5 of $db_dir/$textfile_name: $textfile_md5"
     cat >> "$BASE_DIR/provenance.tsv" <<EOF
 $(date -u +"%Y-%m-%dT%H:%M:%SZ")	$textfile_name	$url (dl-textfile, license accepted)	$textfile_md5
@@ -533,12 +568,7 @@ EOF
     mv "$readme_tmp" "$db_dir/$readme_name"
     info "BRENDA: saved $readme_name"
 
-    local readme_md5
-    if command -v md5sum &>/dev/null; then
-        readme_md5=$(md5sum "$db_dir/$readme_name" | awk '{print $1}')
-    else
-        readme_md5=$(md5 -q "$db_dir/$readme_name")
-    fi
+    local readme_md5; readme_md5=$(_md5 "$db_dir/$readme_name")
     cat >> "$BASE_DIR/provenance.tsv" <<EOF
 $(date -u +"%Y-%m-%dT%H:%M:%SZ")	$readme_name	$url (dl-readme, license accepted)	$readme_md5
 EOF
