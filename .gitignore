@@ -2,6 +2,12 @@
 data/
 databases/
 
+# Claude
+docs/.claude_prompts
+
+# VS Code
+.vscode/
+
 # macOS
 .DS_Store
 
