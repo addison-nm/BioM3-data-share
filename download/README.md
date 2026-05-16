@@ -8,7 +8,7 @@
 
 ## Overview
 
-This pipeline downloads eight bioinformatics databases for local use in sequence analysis, functional annotation, and enzyme research. The main script (`download_databases.sh`) handles downloading, retry logic, MD5 recording, and provenance logging. A companion script (`verify_checksums.sh`) lets you re-verify file integrity at any time.
+This pipeline downloads eleven bioinformatics databases for local use in sequence analysis, functional annotation, and enzyme research. The main script (`download_databases.sh`) handles downloading, retry logic, MD5 recording, and provenance logging. A companion script (`verify_checksums.sh`) lets you re-verify file integrity at any time.
 
 | Database | Type | Source | Auth required? | Typical size |
 |----------|------|--------|----------------|--------------|
@@ -17,6 +17,9 @@ This pipeline downloads eight bioinformatics databases for local use in sequence
 | SwissProt | Curated protein sequences | UniProt FTP | No | ~1 GB |
 | SwissProt BLAST | BLAST database from SwissProt | Local build | No | ~300 MB |
 | TrEMBL | Unreviewed protein sequences | UniProt FTP | No | ~120 GB |
+| UniRef100 | Clustered protein sequences (100% id) | UniProt FTP | No | ~120 GB |
+| UniRef90 | Clustered protein sequences (90% id) | UniProt FTP | No | ~65 GB |
+| UniRef50 | Clustered protein sequences (50% id) | UniProt FTP | No | ~13 GB |
 | SMART | Domain descriptions | EMBL | No | <1 MB |
 | ExPASy Enzyme | Enzyme nomenclature | ExPASy FTP | No | ~10 MB |
 | BRENDA | Enzyme function & kinetics (textfile flat-file) | BRENDA website | No (license acceptance) | ~72 MB compressed |
@@ -37,7 +40,7 @@ This pipeline downloads eight bioinformatics databases for local use in sequence
 
 ### Disk space
 
-Reserve at least **580 GB** of free space before running the full suite. NR alone can exceed 300 GB compressed; TrEMBL adds ~120 GB; the NCBI Taxonomy accession mapping adds ~10 GB.
+Reserve at least **780 GB** of free space before running the full suite. NR alone can exceed 300 GB compressed; TrEMBL adds ~120 GB; the three UniRef tiers add up to ~200 GB combined (UniRef100 ≈ 120 GB, UniRef90 ≈ 65 GB, UniRef50 ≈ 13 GB); the NCBI Taxonomy accession mapping adds ~10 GB. Each UniRef tier is independently selectable with `-d uniref100` / `-d uniref90` / `-d uniref50` if you do not need all three.
 
 ---
 
@@ -161,6 +164,40 @@ Files downloaded:
 **Citation:** The UniProt Consortium. UniProt: the universal protein knowledgebase in 2023. *Nucleic Acids Res.* 2023.
 
 **Reproducibility note:** Record the release date in `reldate.txt`. Archived releases are available at `https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/`.
+
+---
+
+### 4b. UniRef — UniProt Reference Clusters (100 / 90 / 50)
+
+**URL base:** `https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref<NN>/` (where `<NN>` is `100`, `90`, or `50`)
+
+UniRef provides clustered sets of UniProtKB (plus selected UniParc) sequences that hide redundancy while preserving complete coverage of sequence space at three resolutions. **UniRef100** combines identical sequences and subfragments into a single record; **UniRef90** and **UniRef50** are built by clustering UniRef100 seeds at 90% and 50% sequence identity respectively.
+
+These are three **independent**, separately selectable databases, each landing in its own folder:
+
+```bash
+bash download_databases.sh -o /mnt/databases -d uniref100   # ~120 GB
+bash download_databases.sh -o /mnt/databases -d uniref90    # ~65 GB
+bash download_databases.sh -o /mnt/databases -d uniref50    # ~13 GB
+```
+
+Files downloaded (per tier, `<NN>` ∈ {100, 90, 50}):
+
+| File (on disk) | Remote source | Contents |
+|----------------|---------------|----------|
+| `uniref<NN>.fasta.gz` | `uniref<NN>.fasta.gz` | Clustered representative sequences (FASTA) |
+| `uniref<NN>.release_note` | `uniref<NN>.release_note` | Per-dataset release number, date, cluster counts |
+| `uniref<NN>.README` | `README` | Generic UniRef record/format documentation |
+
+> **Note on `README`:** UniProt ships an identically-named `README` in every UniRef subdirectory. The downloader saves it under a dataset-qualified local name (`uniref100.README`, etc.) so each `provenance.tsv` row has a unique `filename` basename and `verify_checksums.sh` resolves each entry to exactly one file. The on-disk content is the upstream `README` verbatim.
+
+The `uniref<NN>.xml.gz`, `RELEASE.metalink`, and `uniref.xsd` files are **not** downloaded (the XML is a far larger redundant representation of the FASTA; metalink/xsd are tooling metadata).
+
+**Integrity:** UniProt publishes no `.md5` sidecars for UniRef (checksums exist only inside `RELEASE.metalink`). As with TrEMBL/SwissProt, the downloader skips already-complete files by size and records the computed MD5 in `provenance.tsv`; re-run `verify_checksums.sh` to re-validate.
+
+**Citation:** Suzek et al., *Bioinformatics* 2015, UniRef clusters: a comprehensive and scalable alternative for improving sequence similarity searches. The UniProt Consortium, *Nucleic Acids Res.* 2023.
+
+**Reproducibility note:** Record the release info in `uniref<NN>.release_note`. Archived releases are available at `https://ftp.uniprot.org/pub/databases/uniprot/previous_releases/`.
 
 ---
 
@@ -288,6 +325,18 @@ databases/
 │   ├── uniprot_trembl.fasta.gz
 │   ├── uniprot_trembl.dat.gz
 │   └── reldate.txt
+├── uniref100/
+│   ├── uniref100.fasta.gz
+│   ├── uniref100.release_note
+│   └── uniref100.README
+├── uniref90/
+│   ├── uniref90.fasta.gz
+│   ├── uniref90.release_note
+│   └── uniref90.README
+├── uniref50/
+│   ├── uniref50.fasta.gz
+│   ├── uniref50.release_note
+│   └── uniref50.README
 ├── smart/
 │   └── SMART_domains.txt
 ├── expasy/
@@ -324,7 +373,7 @@ download_timestamp        filename                  source_url                  
 ## Reproducibility Checklist
 
 - [ ] `provenance.tsv` committed to version control (without credential files)
-- [ ] Release version recorded for Pfam (`relnotes.txt`), SwissProt (`reldate.txt`), and TrEMBL (`reldate.txt`)
+- [ ] Release version recorded for Pfam (`relnotes.txt`), SwissProt (`reldate.txt`), TrEMBL (`reldate.txt`), and UniRef (`uniref<NN>.release_note`)
 - [ ] Download date recorded (automatic in `provenance.tsv`)
 - [ ] `verify_checksums.sh` run and passed after download
 - [ ] SMART credential files **not** committed to version control (add to `.gitignore`)

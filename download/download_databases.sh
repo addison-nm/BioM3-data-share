@@ -12,11 +12,13 @@
 #   -o DIR    Output base directory (default: ./databases)
 #   -d DB     Download a specific database (can be repeated)
 #             Valid: nr, nr_blast, pfam, swissprot, swissprot_blast, trembl,
-#                    smart, expasy, brenda, ncbi_taxonomy
+#                    uniref100, uniref90, uniref50, smart, expasy, brenda,
+#                    ncbi_taxonomy
 #             If omitted, all databases are downloaded.
 #             nr              = raw FASTA sequences (single nr.gz file)
 #             nr_blast        = pre-formatted BLAST database (numbered volumes)
 #             swissprot_blast = BLAST database built from SwissProt FASTA
+#             uniref100/90/50 = UniProt Reference Clusters (independent IDs)
 #   -h        Show this help message
 #
 # Requirements:
@@ -31,7 +33,7 @@ set -euo pipefail
 # Defaults
 # ---------------------------------------------------------------------------
 BASE_DIR="./databases"
-ALL_DBS=(nr nr_blast pfam swissprot swissprot_blast trembl smart expasy brenda ncbi_taxonomy)
+ALL_DBS=(nr nr_blast pfam swissprot swissprot_blast trembl uniref100 uniref90 uniref50 smart expasy brenda ncbi_taxonomy)
 SELECTED_DBS=()
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 DATE_TAG=$(date -u +"%Y%m%d")
@@ -41,7 +43,7 @@ LOG_FILE=""          # set after BASE_DIR is resolved
 # Argument parsing
 # ---------------------------------------------------------------------------
 usage() {
-    sed -n '3,20p' "$0" | sed 's/^# \?//'
+    sed -n '3,22p' "$0" | sed 's/^# \?//'
     exit 0
 }
 
@@ -421,6 +423,45 @@ download_trembl() {
 }
 
 # ===========================================================================
+# 4b. UniRef — UniProt Reference Clusters (100 / 90 / 50)
+#    Source  : UniProt FTP — ftp.uniprot.org/pub/databases/uniprot/uniref
+#    Files   : uniref<NN>.fasta.gz      (clustered representative sequences)
+#              uniref<NN>.release_note  (per-dataset release metadata)
+#              README                   (generic UniRef format doc; saved
+#                                        locally as uniref<NN>.README so each
+#                                        provenance basename is unique and
+#                                        verify_checksums.sh resolves 1:1)
+#    Notes   : uniref100 ≈ 120 GB, uniref90 ≈ 65 GB, uniref50 ≈ 13 GB
+#              compressed. No .md5 sidecars published (checksums live only in
+#              RELEASE.metalink); like TrEMBL/SwissProt we rely on the
+#              size-based idempotency gate. xml.gz / metalink / xsd are not
+#              downloaded. The three tiers are independent -d databases.
+# ===========================================================================
+download_uniref_tier() {
+    local nn="$1"
+    local db_dir="$BASE_DIR/uniref${nn}"
+    mkdir -p "$db_dir"
+    info "--- UniRef${nn} (UniProt Reference Clusters at ${nn}% identity) ---"
+
+    local base_url="https://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref${nn}"
+
+    # Dataset-specific files: remote basename == desired local basename.
+    for fname in "uniref${nn}.fasta.gz" "uniref${nn}.release_note"; do
+        download_file "$base_url/$fname" "$db_dir/$fname"
+    done
+
+    # Generic upstream 'README' (identical across tiers) saved under a
+    # dataset-qualified local name so provenance basenames stay unique.
+    download_file "$base_url/README" "$db_dir/uniref${nn}.README"
+
+    success "UniRef${nn}: downloads complete — $db_dir"
+}
+
+download_uniref100() { download_uniref_tier 100; }
+download_uniref90()  { download_uniref_tier 90;  }
+download_uniref50()  { download_uniref_tier 50;  }
+
+# ===========================================================================
 # 5. SMART (Simple Modular Architecture Research Tool)
 #    Source  : EMBL — smart.embl.de
 #    Files   : SMART_domains.txt — domain accessions, names, and descriptions
@@ -622,6 +663,9 @@ for db in "${ALL_DBS[@]}"; do
         swissprot)      download_swissprot ;;
         swissprot_blast) download_swissprot_blast ;;
         trembl)         download_trembl ;;
+        uniref100)      download_uniref100 ;;
+        uniref90)       download_uniref90 ;;
+        uniref50)       download_uniref50 ;;
         smart)          download_smart ;;
         expasy)         download_expasy ;;
         brenda)         download_brenda ;;
